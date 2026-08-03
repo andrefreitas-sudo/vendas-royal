@@ -1,4 +1,4 @@
-const CACHE = 'motovendas-v1';
+const CACHE = 'motovendas-v2';
 const ASSETS = [
   './',
   './index.html',
