@@ -187,8 +187,12 @@ a{color:var(--blue)}
       <label>Data</label>
       <input type="date" id="fData">
       <div id="formVenda">
+        <label>Nome do cliente</label>
+        <input type="text" id="fCliente" placeholder="Nome completo do cliente">
         <label>Moto vendida</label>
         <select id="fMoto"></select>
+        <label>Versão</label>
+        <select id="fVersao"></select>
         <label>Valor total da moto (R$)</label>
         <input type="number" id="fValorMoto" step="0.01" inputmode="decimal" placeholder="0,00" oninput="pagStatus()">
         <h3>Pagamentos</h3>
@@ -217,6 +221,8 @@ a{color:var(--blue)}
         </div>
       </div>
       <div id="formAcess" class="hidden">
+        <label>Nome do cliente</label>
+        <input type="text" id="fClienteAcess" placeholder="Nome completo do cliente">
         <label>Descrição do acessório</label>
         <input type="text" id="fAcessDesc" placeholder="Ex.: capacete, baú, película...">
         <label>Valor (R$)</label>
@@ -669,6 +675,7 @@ function salvarMetas(){
 function renderFormBasics(){
   const c=cfg()||{motos:[],docTabelas:[],premioSeminovo:0};
   $('fMoto').innerHTML=(c.motos||[]).map(m=>`<option>${m}</option>`).join('');
+  $('fVersao').innerHTML='<option value="">—</option>'+(c.versoes||[]).map(v=>`<option>${v}</option>`).join('');
   $('fDocTabela').innerHTML=(c.docTabelas||[]).map(t=>`<option value="${t.id}">${t.nome}</option>`).join('');
   $('snPremioInfo').textContent=fmt(c.premioSeminovo);
   $('fData').value=new Date().toISOString().slice(0,10);
@@ -741,13 +748,15 @@ function salvarLancamento(){
          status:'pendente', criadoPor:(antigo&&antigo.criadoPor)||SESSION.nome, updatedAt:Date.now()};
   if(antigo&&isSup()){ l.status=antigo.status; l.validadoPor=antigo.validadoPor; l.motivoRejeicao=antigo.motivoRejeicao; }
   if(tipoLanc==='venda'){
+    const cli=$('fCliente').value.trim();
+    if(!cli) return toast('Informe o nome do cliente', true);
     const vm=num('fValorMoto');
     if(vm<=0) return toast('Informe o valor da moto', true);
     if(!pagamentos.length) return toast('Adicione ao menos um pagamento', true);
     const tot=pagamentos.reduce((s,p)=>s+p.valor,0);
     if(Math.abs(tot-vm)>=0.01) return toast('Pagamentos não conferem com o valor da moto', true);
     if(pagamentos.some(p=>p.tipo==='Financiamento'&&!p.banco)) return toast('Selecione o banco do financiamento', true);
-    l.moto=$('fMoto').value; l.valorMoto=vm;
+    l.cliente=cli; l.moto=$('fMoto').value; l.versao=$('fVersao').value; l.valorMoto=vm;
     l.pagamentos=JSON.parse(JSON.stringify(pagamentos));
     l.valorAcess=num('fAcessVenda');
     if(docStatusSel==='feita'){
@@ -758,9 +767,11 @@ function salvarLancamento(){
       l.doc={status:'perda', motivo};
     }
   }else if(tipoLanc==='acessorio'){
+    const cliA=$('fClienteAcess').value.trim();
+    if(!cliA) return toast('Informe o nome do cliente', true);
     const v=num('fAcessValor');
     if(v<=0) return toast('Informe o valor do acessório', true);
-    l.descricao=$('fAcessDesc').value.trim(); l.valor=v;
+    l.cliente=cliA; l.descricao=$('fAcessDesc').value.trim(); l.valor=v;
   }else{
     const d=$('fSnMoto').value.trim();
     if(!d) return toast('Descreva a moto captada', true);
@@ -775,7 +786,8 @@ function limparForm(){
   editId=null;
   $('btnCancelEdit').classList.add('hidden');
   $('btnSalvar').textContent='💾 Salvar Lançamento';
-  ['fValorMoto','fAcessVenda','fDocValor','fDocMotivo','fAcessDesc','fAcessValor','fSnMoto'].forEach(id=>$(id).value='');
+  ['fValorMoto','fAcessVenda','fDocValor','fDocMotivo','fAcessDesc','fAcessValor','fSnMoto','fCliente','fClienteAcess'].forEach(id=>$(id).value='');
+  $('fVersao').value='';
   $('fDocDesc').value='0';
   $('fData').value=new Date().toISOString().slice(0,10);
   setDocStatus('feita');
@@ -800,11 +812,12 @@ function editarLanc(id){
   $('fData').value=l.data;
   if(isSup()) $('lancVendSel').value=l.vendedor;
   if(l.tipo==='venda'){
-    $('fMoto').value=l.moto; $('fValorMoto').value=l.valorMoto; $('fAcessVenda').value=l.valorAcess||'';
+    $('fCliente').value=l.cliente||''; $('fMoto').value=l.moto; $('fVersao').value=l.versao||'';
+    $('fValorMoto').value=l.valorMoto; $('fAcessVenda').value=l.valorAcess||'';
     pagamentos=JSON.parse(JSON.stringify(l.pagamentos)); renderPagamentos();
     if(l.doc.status==='feita'){ setDocStatus('feita'); $('fDocValor').value=l.doc.valor; $('fDocDesc').value=l.doc.desconto; $('fDocTabela').value=l.doc.tabelaId; }
     else{ setDocStatus('perda'); $('fDocMotivo').value=l.doc.motivo; }
-  }else if(l.tipo==='acessorio'){ $('fAcessDesc').value=l.descricao||''; $('fAcessValor').value=l.valor; }
+  }else if(l.tipo==='acessorio'){ $('fClienteAcess').value=l.cliente||''; $('fAcessDesc').value=l.descricao||''; $('fAcessValor').value=l.valor; }
   else $('fSnMoto').value=l.descricao;
   $('btnSalvar').textContent='💾 Atualizar Lançamento';
   $('btnCancelEdit').classList.remove('hidden');
@@ -824,12 +837,12 @@ function nomeTabela(id){ const t=(cfg()?.docTabelas||[]).find(x=>x.id===id); ret
 function lancHtml(l,acoes){
   let t1='',t2='';
   if(l.tipo==='venda'){
-    t1=`${l.moto} — ${fmt(l.valorMoto)}`;
+    t1=`${l.cliente?l.cliente+' — ':''}${l.moto}${l.versao?' '+l.versao:''} — ${fmt(l.valorMoto)}`;
     const pg=l.pagamentos.map(p=>p.tipo==='Financiamento'?`Financ. ${nomeBanco(p.banco)} ${p.retorno||''}`:p.tipo).join(' + ');
     const doc=l.doc.status==='feita'?`Doc ${nomeTabela(l.doc.tabelaId)} ${fmt((l.doc.valor||0)-(l.doc.desconto||0))}`:`🚫 Doc perdida: ${l.doc.motivo}`;
     t2=`${l.vendedor} · ${l.data.slice(8,10)}/${l.data.slice(5,7)} · ${pg}${l.valorAcess?` · Acess ${fmt(l.valorAcess)}`:''} · ${doc}`;
   }else if(l.tipo==='acessorio'){
-    t1=`${l.descricao||'Acessório'} — ${fmt(l.valor)}`;
+    t1=`${l.cliente?l.cliente+' — ':''}${l.descricao||'Acessório'} — ${fmt(l.valor)}`;
     t2=`${l.vendedor} · ${l.data.slice(8,10)}/${l.data.slice(5,7)}`;
   }else{
     t1=l.descricao;
@@ -891,7 +904,8 @@ function detalheHtml(l,acoes){
     const comAcess=(l.valorAcess||0)*(c.pctAcess||0)/100;
     corpo=`<div class="scroll-x"><table>
       <tr><th>Item</th><th>Valor</th></tr>
-      <tr><td>🏍️ ${l.moto}</td><td><b>${fmt(l.valorMoto)}</b></td></tr>
+      <tr><td>👤 Cliente</td><td><b>${l.cliente||'—'}</b></td></tr>
+      <tr><td>🏍️ ${l.moto}${l.versao?' · '+l.versao:''}</td><td><b>${fmt(l.valorMoto)}</b></td></tr>
       <tr><td class="muted" style="padding-left:18px">Comissão moto (${c.pctMoto}%)</td><td class="muted">${fmt(comMoto)}</td></tr>
       ${pagRows}
       <tr><td>Total dos pagamentos</td><td class="${Math.abs(totalPag-l.valorMoto)<0.01?'':'warn'}">${fmt(totalPag)}</td></tr>
@@ -904,6 +918,7 @@ function detalheHtml(l,acoes){
     const com=(l.valor||0)*(c.pctAcess||0)/100;
     corpo=`<div class="scroll-x"><table>
       <tr><th>Item</th><th>Valor</th></tr>
+      <tr><td>👤 Cliente</td><td><b>${l.cliente||'—'}</b></td></tr>
       <tr><td>🧰 ${l.descricao||'Acessório'}</td><td><b>${fmt(l.valor)}</b></td></tr>
       <tr><td>Comissão (${c.pctAcess}%)</td><td><b>${fmt(com)}</b></td></tr>
     </table></div>`;
@@ -1018,7 +1033,51 @@ function calcularApuracao(mes){
   });
   return res;
 }
+/* Comissão total gerada por UM lançamento (sem prêmios mensais) */
+function comissaoLanc(l){
+  const c=cfg()||{};
+  const dsr=(c.dsrMeses||{})[l.mes]||{domFer:5,uteis:25};
+  const fator=dsr.uteis>0?dsr.domFer/dsr.uteis:0;
+  if(l.tipo==='seminovo') return c.premioSeminovo||0;
+  if(l.tipo==='acessorio'){
+    const ca=(l.valor||0)*(c.pctAcess||0)/100;
+    return ca+ca*fator;
+  }
+  const cm=(l.valorMoto||0)*(c.pctMoto||0)/100;
+  const ca=(l.valorAcess||0)*(c.pctAcess||0)/100;
+  let cf=0;
+  (l.pagamentos||[]).forEach(p=>{ if(p.tipo==='Financiamento') cf+=calcFin(p.valor,p.retorno,l.mes).comissao; });
+  const cd=(l.doc&&l.doc.status==='feita')?valorDoc(l.doc.tabelaId):0;
+  return cm+cm*fator + ca+ca*fator + cf+cf*fator + cd;
+}
+/* Visão do vendedor: apenas cliente + comissão de cada venda e o total */
+function renderApuracaoVendedor(){
+  $('mesApu').textContent=nomeMes(mesAtual);
+  $('dsrCard').classList.add('hidden');
+  $('exportCard').classList.add('hidden');
+  const meus=lancAll().filter(l=>l.mes===mesAtual&&l.status==='validado'&&l.vendedor===SESSION.nome)
+    .sort((a,b)=>a.data.localeCompare(b.data));
+  const res=calcularApuracao(mesAtual);
+  const r=res[SESSION.nome]||{total:0,premioQt:0,premioEmpl:0};
+  let linhas=meus.map(l=>{
+    const rot=l.tipo==='venda'?`Venda · ${l.cliente||'Cliente'}`
+             :l.tipo==='acessorio'?`Acessório · ${l.cliente||'Cliente'}`
+             :`Captação seminovo · ${l.descricao||''}`;
+    return `<div class="total-line"><span>${rot}</span><b>${fmt(comissaoLanc(l))}</b></div>`;
+  }).join('');
+  const premios=(r.premioQt||0)+(r.premioEmpl||0);
+  if(premios>0) linhas+=`<div class="total-line"><span>Prêmios do mês</span><b>${fmt(premios)}</b></div>`;
+  const pend=lancAll().filter(l=>l.mes===mesAtual&&l.status==='pendente'&&l.vendedor===SESSION.nome).length;
+  $('apuResultado').innerHTML=`<div class="card">
+    <h2>💰 Meu comissionamento — ${nomeMes(mesAtual)}</h2>
+    ${linhas||'<p class="muted">Nenhuma venda validada neste mês.</p>'}
+    <div class="total-line big"><span>Comissionamento total</span><span>${fmt(r.total)}</span></div>
+    ${pend?`<p class="muted" style="margin-top:8px">⏳ ${pend} lançamento(s) aguardando validação — ainda não contabilizados.</p>`:''}
+  </div>`;
+}
 function renderApuracao(){
+  if(!isSup()) return renderApuracaoVendedor();
+  $('dsrCard').classList.remove('hidden');
   $('mesApu').textContent=nomeMes(mesAtual);
   const dsr=getDsrMes();
   $('dsrDomFer').value=dsr.domFer; $('dsrUteis').value=dsr.uteis;
@@ -1067,14 +1126,14 @@ function exportarExcel(){
   rows.push([]); rows.push(['DOCUMENTAÇÕES PERDIDAS']); rows.push(['Vendedor','Data','Moto','Motivo']);
   Object.entries(res).forEach(([v,r])=>r.docsPerdidas.forEach(d=>rows.push([v,d.data,d.moto,d.motivo])));
   rows.push([]); rows.push(['LANÇAMENTOS VALIDADOS DO MÊS']);
-  rows.push(['Data','Vendedor','Tipo','Descrição','Valor','Pagamentos','Documentação','Validado por']);
+  rows.push(['Data','Vendedor','Cliente','Tipo','Descrição','Versão','Valor','Pagamentos','Documentação','Validado por']);
   lancAll().filter(l=>l.mes===mesAtual&&l.status==='validado').sort((a,b)=>a.data.localeCompare(b.data)).forEach(l=>{
     if(l.tipo==='venda'){
-      rows.push([l.data,l.vendedor,'Venda Moto',l.moto,l.valorMoto,
+      rows.push([l.data,l.vendedor,l.cliente||'','Venda Moto',l.moto,l.versao||'',l.valorMoto,
         l.pagamentos.map(p=>`${p.tipo==='Financiamento'?'Financ. '+nomeBanco(p.banco)+' '+(p.retorno||''):p.tipo}: ${p.valor}`).join(' | '),
         l.doc.status==='feita'?`${nomeTabela(l.doc.tabelaId)} · cobrado R$${((l.doc.valor||0)-(l.doc.desconto||0)).toFixed(2)} · comissão R$${valorDoc(l.doc.tabelaId).toFixed(2)}`:`PERDIDA: ${l.doc.motivo}`, l.validadoPor||'']);
-    }else if(l.tipo==='acessorio') rows.push([l.data,l.vendedor,'Acessório',l.descricao||'',l.valor,'','',l.validadoPor||'']);
-    else rows.push([l.data,l.vendedor,'Captação SN',l.descricao,(cfg()?.premioSeminovo)||0,'','',l.validadoPor||'']);
+    }else if(l.tipo==='acessorio') rows.push([l.data,l.vendedor,l.cliente||'','Acessório',l.descricao||'','',l.valor,'','',l.validadoPor||'']);
+    else rows.push([l.data,l.vendedor,'','Captação SN',l.descricao,'',(cfg()?.premioSeminovo)||0,'','',l.validadoPor||'']);
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=rows[0].map(()=>({wch:18}));
@@ -1100,7 +1159,11 @@ function renderAdmin(){
       <button class="btn sm" onclick="admAddUser()">＋</button>
     </div></div>
   <div class="card"><h2>🏍️ Modelos de Moto</h2><div id="admMotos"></div>
-    <div class="admin-row"><input id="novaMoto" placeholder="Modelo"><button class="btn sm" onclick="admAddStr('motos','novaMoto')">＋</button></div></div>
+    <div class="admin-row"><input id="novaMoto" placeholder="Modelo"><button class="btn sm" onclick="admAddStr('motos','novaMoto')">＋</button></div>
+    <h3>Versões</h3>
+    <p class="muted">Lista que aparece abaixo do modelo no lançamento</p>
+    <div id="admVersoes"></div>
+    <div class="admin-row"><input id="novaVersao" placeholder="Versão (ex.: Standard, Dual Tone)"><button class="btn sm" onclick="admAddStr('versoes','novaVersao')">＋</button></div></div>
   <div class="card"><h2>🏦 Bancos de Financiamento</h2><div id="admBancos"></div>
     <div class="admin-row"><input id="novoBanco" placeholder="Nome do banco"><button class="btn sm" onclick="admAddBanco()">＋</button></div>
     <h3>Retornos (R0–R5)</h3>
@@ -1141,6 +1204,7 @@ function admRenderListas(){
       <button class="btn sec sm" onclick="admToggleAtivo(${i})">${u.ativo!==false?'🟢':'⚫'}</button>
     </div>`).join('');
   $('admMotos').innerHTML=(c.motos||[]).map((m,i)=>`<div class="admin-row"><input value="${m}" onchange="admEditStr('motos',${i},this.value)"><button class="mini" onclick="admRmStr('motos',${i})">🗑️</button></div>`).join('');
+  $('admVersoes').innerHTML=(c.versoes||[]).map((v,i)=>`<div class="admin-row"><input value="${v}" onchange="admEditStr('versoes',${i},this.value)"><button class="mini" onclick="admRmStr('versoes',${i})">🗑️</button></div>`).join('');
   $('admBancos').innerHTML=(c.bancos||[]).map((b,i)=>`<div class="admin-row"><input value="${b.nome}" onchange="admEditBanco(${i},'nome',this.value)"><button class="mini" onclick="admRmStr('bancos',${i})">🗑️</button></div>`).join('');
   $('admRetornos').innerHTML=Object.entries(retornos()).map(([r,pc])=>`<div class="admin-row"><span class="muted" style="width:36px">${r}</span><input class="narrow" type="number" step="0.1" value="${pc}" onchange="admEditRetorno('${r}',this.value)"><span class="muted">%</span></div>`).join('');
   $('admDocs').innerHTML=(c.docTabelas||[]).map((t,i)=>`<div class="admin-row"><input value="${t.nome}" onchange="admEditDoc(${i},'nome',this.value)"><span class="muted">R$</span><input class="narrow" type="number" step="0.01" value="${t.valor!==undefined?t.valor:0}" onchange="admEditDoc(${i},'valor',this.value)"></div>`).join('');
@@ -1174,7 +1238,8 @@ function admToggleAtivo(i){
 }
 function admAddStr(lista,inputId){
   const v=$(inputId).value.trim(); if(!v) return;
-  cfg()[lista].push(v); $(inputId).value='';
+  const c=cfg(); c[lista]=c[lista]||[];
+  c[lista].push(v); $(inputId).value='';
   saveConfig(); admRenderListas(); renderFormBasics();
 }
 function admEditStr(lista,i,v){ cfg()[lista][i]=v; saveConfig(); renderFormBasics(); }
