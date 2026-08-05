@@ -165,7 +165,7 @@ a{color:var(--blue)}
     <div id="biVisaoSel" class="hidden card" style="padding:10px 16px">
       <label style="margin-top:0">Visão</label>
       <select id="biVend" onchange="renderBI()"></select>
-      <button class="btn sec sm" style="margin-top:10px" onclick="abrirMetas()">🎯 Definir metas do mês</button>
+      <button class="btn sec sm" id="btnMetas" style="margin-top:10px" onclick="abrirMetas()">🎯 Definir metas do mês</button>
     </div>
     <div id="biConteudo"></div>
   </section>
@@ -262,7 +262,7 @@ a{color:var(--blue)}
       <div id="listaPendentes"></div>
     </div>
     <div class="card">
-      <h2>🚫 Rejeitados no mês</h2>
+      <h2>📁 Já tratados no mês (validados e rejeitados)</h2>
       <div id="listaRejeitados"></div>
     </div>
   </section>
@@ -280,7 +280,11 @@ a{color:var(--blue)}
         <div><label>Domingos + feriados</label><input type="number" id="dsrDomFer" onchange="salvarDsrMes()"></div>
         <div><label>Dias úteis</label><input type="number" id="dsrUteis" onchange="salvarDsrMes()"></div>
       </div>
-      <p class="muted" style="margin-top:6px">DSR = comissão × (domingos+feriados ÷ dias úteis). Somente lançamentos <b>validados</b> entram na apuração.</p>
+      <label>ILA do mês (%) — desconto sobre o retorno do financiamento</label>
+      <input type="number" step="0.01" id="ilaMes" onchange="salvarIlaMes()">
+      <p class="muted" style="margin-top:6px">DSR = comissão × (domingos+feriados ÷ dias úteis).<br>
+      Financiamento: retorno bruto → −ILA → −imposto <span id="infoImposto"></span>% → comissão do vendedor <span id="infoComFin"></span>% do líquido.<br>
+      Somente lançamentos <b>validados</b> entram na apuração.</p>
     </div>
     <div id="apuResultado"></div>
     <div class="card" id="exportCard">
@@ -333,6 +337,28 @@ function usuarios(){ return CACHE.usuarios?CACHE.usuarios.data:[]; }
 function vendedores(){ return usuarios().filter(u=>u.role==='vendedor'&&u.ativo!==false).map(u=>u.nome); }
 function isSup(){ return SESSION&&(SESSION.role==='supervisor'||SESSION.role==='admin'); }
 function retornos(){ return (cfg()&&cfg().retornos)||{R0:0,R1:1.2,R2:2.4,R3:3.6,R4:4.8,R5:6}; }
+function ilaDoMes(mes){
+  const c=cfg()||{};
+  const v=(c.ilaMeses||{})[mes];
+  return v!==undefined&&v!==null?v:(c.ilaPadrao!==undefined?c.ilaPadrao:26.05);
+}
+function impostoFin(){ const c=cfg()||{}; return c.impostoFin!==undefined?c.impostoFin:14.25; }
+function pctComVendFin(){ const c=cfg()||{}; return c.pctComissaoVendFin!==undefined?c.pctComissaoVendFin:10; }
+/* Cálculo do financiamento: bruto = valor × retorno% → −ILA% → −imposto% → comissão do vendedor % */
+function calcFin(valor,retorno,mes){
+  const rp=retornos()[retorno||'R0']||0;
+  const bruto=valor*rp/100;
+  const ila=ilaDoMes(mes);
+  const posIla=bruto*(1-ila/100);
+  const liquido=posIla*(1-impostoFin()/100);
+  const comissao=liquido*pctComVendFin()/100;
+  return {rp,bruto,ila,posIla,liquido,comissao};
+}
+function valorDoc(tabelaId){
+  const t=(cfg()?.docTabelas||[]).find(x=>x.id===tabelaId);
+  if(!t) return 0;
+  return t.valor!==undefined?t.valor:0;
+}
 function isAdmin(){ return SESSION&&SESSION.role==='admin'; }
 
 /* lançamentos = cache remoto + operações pendentes (outbox) */
@@ -584,6 +610,7 @@ function renderBI(){
   let html='';
   if(isSup()){
     wrap.classList.remove('hidden');
+    $('btnMetas').classList.toggle('hidden',!isAdmin()); /* metas: somente administrador */
     const sel=$('biVend');
     const cur=sel.value;
     sel.innerHTML='<option value="">🌐 Visão geral</option>'+vendedores().map(v=>`<option ${cur===v?'selected':''}>${v}</option>`).join('');
@@ -711,8 +738,8 @@ function salvarLancamento(){
   if(!vend) return toast('Sem vendedor', true);
   const antigo=editId?lancAll().find(x=>x.id===editId):null;
   let l={id:editId||uid(), tipo:tipoLanc, vendedor:vend, data, mes:data.slice(0,7),
-         status:'pendente', criadoPor:SESSION.nome, updatedAt:Date.now()};
-  if(antigo&&isAdmin()) l.status=antigo.status; /* admin editando não reseta validação */
+         status:'pendente', criadoPor:(antigo&&antigo.criadoPor)||SESSION.nome, updatedAt:Date.now()};
+  if(antigo&&isSup()){ l.status=antigo.status; l.validadoPor=antigo.validadoPor; l.motivoRejeicao=antigo.motivoRejeicao; }
   if(tipoLanc==='venda'){
     const vm=num('fValorMoto');
     if(vm<=0) return toast('Informe o valor da moto', true);
@@ -757,11 +784,11 @@ function limparForm(){
 }
 function cancelarEdicao(){ limparForm(); }
 function podeEditar(l){
-  if(isAdmin()) return true;
+  if(isSup()) return true;                       /* supervisor e admin: alteram qualquer lançamento */
   return l.vendedor===SESSION.nome && l.status!=='validado';
 }
 function podeExcluir(l){
-  if(isAdmin()) return true;
+  if(isAdmin()) return true;                     /* admin: exclui qualquer coisa */
   return l.vendedor===SESSION.nome && l.status==='pendente';
 }
 function editarLanc(id){
@@ -833,15 +860,83 @@ function renderLista(){
 }
 
 /* ================= VALIDAÇÃO ================= */
+/* Card completo com todos os detalhes da negociação */
+function detalheHtml(l,acoes){
+  const c=cfg()||{};
+  let corpo='';
+  if(l.tipo==='venda'){
+    const totalPag=l.pagamentos.reduce((s,p)=>s+p.valor,0);
+    let pagRows='', comFinTotal=0;
+    l.pagamentos.forEach(p=>{
+      if(p.tipo==='Financiamento'){
+        const f=calcFin(p.valor,p.retorno,l.mes);
+        comFinTotal+=f.comissao;
+        pagRows+=`<tr><td>🏦 Financ. ${nomeBanco(p.banco)} · ${p.retorno||'R0'} (${f.rp}%)</td><td>${fmt(p.valor)}</td></tr>
+          <tr><td class="muted" style="padding-left:18px">Retorno bruto</td><td class="muted">${fmt(f.bruto)}</td></tr>
+          <tr><td class="muted" style="padding-left:18px">− ILA ${f.ila}%</td><td class="muted">${fmt(f.posIla)}</td></tr>
+          <tr><td class="muted" style="padding-left:18px">− Imposto ${impostoFin()}%</td><td class="muted">${fmt(f.liquido)}</td></tr>
+          <tr><td style="padding-left:18px"><b>Comissão vendedor (${pctComVendFin()}%)</b></td><td><b>${fmt(f.comissao)}</b></td></tr>`;
+      }else{
+        pagRows+=`<tr><td>${p.tipo}</td><td>${fmt(p.valor)}</td></tr>`;
+      }
+    });
+    const doc=l.doc.status==='feita'
+      ? `<tr><td>Documentação</td><td>${nomeTabela(l.doc.tabelaId)}</td></tr>
+         <tr><td class="muted" style="padding-left:18px">Valor cobrado</td><td class="muted">${fmt(l.doc.valor)}</td></tr>
+         <tr><td class="muted" style="padding-left:18px">Desconto</td><td class="muted">${fmt(l.doc.desconto)}</td></tr>
+         <tr><td class="muted" style="padding-left:18px">Líquido ao cliente</td><td class="muted">${fmt((l.doc.valor||0)-(l.doc.desconto||0))}</td></tr>
+         <tr><td><b>Comissão documentação</b></td><td><b>${fmt(valorDoc(l.doc.tabelaId))}</b></td></tr>`
+      : `<tr><td colspan="2"><span class="chip red">🚫 Documentação perdida — ${l.doc.motivo}</span></td></tr>`;
+    const comMoto=l.valorMoto*(c.pctMoto||0)/100;
+    const comAcess=(l.valorAcess||0)*(c.pctAcess||0)/100;
+    corpo=`<div class="scroll-x"><table>
+      <tr><th>Item</th><th>Valor</th></tr>
+      <tr><td>🏍️ ${l.moto}</td><td><b>${fmt(l.valorMoto)}</b></td></tr>
+      <tr><td class="muted" style="padding-left:18px">Comissão moto (${c.pctMoto}%)</td><td class="muted">${fmt(comMoto)}</td></tr>
+      ${pagRows}
+      <tr><td>Total dos pagamentos</td><td class="${Math.abs(totalPag-l.valorMoto)<0.01?'':'warn'}">${fmt(totalPag)}</td></tr>
+      ${l.valorAcess?`<tr><td>🧰 Acessórios na venda</td><td>${fmt(l.valorAcess)}</td></tr>
+      <tr><td class="muted" style="padding-left:18px">Comissão acessórios (${c.pctAcess}%)</td><td class="muted">${fmt(comAcess)}</td></tr>`:''}
+      ${doc}
+      <tr><td><b>Comissão total desta venda</b></td><td><b style="color:var(--accent2)">${fmt(comMoto+comAcess+comFinTotal+(l.doc.status==='feita'?valorDoc(l.doc.tabelaId):0))}</b></td></tr>
+    </table></div>`;
+  }else if(l.tipo==='acessorio'){
+    const com=(l.valor||0)*(c.pctAcess||0)/100;
+    corpo=`<div class="scroll-x"><table>
+      <tr><th>Item</th><th>Valor</th></tr>
+      <tr><td>🧰 ${l.descricao||'Acessório'}</td><td><b>${fmt(l.valor)}</b></td></tr>
+      <tr><td>Comissão (${c.pctAcess}%)</td><td><b>${fmt(com)}</b></td></tr>
+    </table></div>`;
+  }else{
+    corpo=`<div class="scroll-x"><table>
+      <tr><th>Item</th><th>Valor</th></tr>
+      <tr><td>♻️ ${l.descricao}</td><td>—</td></tr>
+      <tr><td>Prêmio de captação</td><td><b>${fmt(c.premioSeminovo)}</b></td></tr>
+    </table></div>`;
+  }
+  return `<div class="card" style="border-left:4px solid var(--accent)">
+    <h2><span class="badge ${l.status}">${l.status}</span> ${l.vendedor} · ${l.data.split('-').reverse().join('/')}</h2>
+    ${corpo}
+    <p class="muted" style="margin-top:8px">Lançado por ${l.criadoPor||l.vendedor}${l.validadoPor?` · Tratado por ${l.validadoPor}`:''}${l.motivoRejeicao?` · ❌ ${l.motivoRejeicao}`:''}</p>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px">${acoes||''}</div>
+  </div>`;
+}
 function renderValidar(){
   $('mesVal').textContent=nomeMes(mesAtual);
   const pend=lancAll().filter(l=>l.mes===mesAtual&&l.status==='pendente').sort((a,b)=>a.data.localeCompare(b.data));
-  $('listaPendentes').innerHTML=pend.length?pend.map(l=>lancHtml(l,
+  $('listaPendentes').innerHTML=pend.length?pend.map(l=>detalheHtml(l,
     `<button class="btn ok sm" onclick="validarLanc('${l.id}',true)">✅ Validar</button>
-     <button class="btn danger sm" onclick="validarLanc('${l.id}',false)">✖ Rejeitar</button>`
+     <button class="btn danger sm" onclick="validarLanc('${l.id}',false)">✖ Rejeitar</button>
+     <button class="btn sec sm" onclick="editarLanc('${l.id}')">✏️ Alterar</button>
+     ${isAdmin()?`<button class="btn sec sm" onclick="excluirLanc('${l.id}')">🗑️ Excluir</button>`:''}`
   )).join(''):'<p class="muted">Nada pendente. 🎉</p>';
-  const rej=lancAll().filter(l=>l.mes===mesAtual&&l.status==='rejeitado');
-  $('listaRejeitados').innerHTML=rej.length?rej.map(l=>lancHtml(l,'')).join(''):'<p class="muted">Nenhum.</p>';
+  const jaTratados=lancAll().filter(l=>l.mes===mesAtual&&l.status!=='pendente').sort((a,b)=>b.data.localeCompare(a.data));
+  $('listaRejeitados').innerHTML=jaTratados.length?jaTratados.map(l=>detalheHtml(l,
+    `<button class="btn sec sm" onclick="editarLanc('${l.id}')">✏️ Alterar</button>
+     ${l.status==='rejeitado'?`<button class="btn ok sm" onclick="validarLanc('${l.id}',true)">✅ Validar</button>`:''}
+     ${l.status==='validado'?`<button class="btn danger sm" onclick="validarLanc('${l.id}',false)">✖ Reverter/Rejeitar</button>`:''}
+     ${isAdmin()?`<button class="btn sec sm" onclick="excluirLanc('${l.id}')">🗑️ Excluir</button>`:''}`
+  )).join(''):'<p class="muted">Nenhum lançamento tratado neste mês.</p>';
 }
 function validarLanc(id,ok){
   const l=lancAll().find(x=>x.id===id); if(!l) return;
@@ -867,6 +962,14 @@ function salvarDsrMes(){
   queue({file:'config',op:'full',data:c});
   renderApuracao();
 }
+function salvarIlaMes(){
+  if(!isSup()) return;
+  const c=cfg();
+  c.ilaMeses=c.ilaMeses||{};
+  c.ilaMeses[mesAtual]=num('ilaMes');
+  queue({file:'config',op:'full',data:c});
+  renderApuracao();
+}
 function premioFaixa(faixas,qtd){
   let p=0; (faixas||[]).slice().sort((a,b)=>a.min-b.min).forEach(f=>{ if(qtd>=f.min) p=f.premio; });
   return p;
@@ -879,6 +982,7 @@ function calcularApuracao(mes){
   const nomes=isSup()?vendedores():[SESSION.nome];
   nomes.forEach(v=>{
     res[v]={valorMotos:0,qtVendas:0,comMotos:0,dsrMotos:0,comFin:0,dsrFin:0,valorAcess:0,comAcess:0,dsrAcess:0,
+            valorFinanciado:0,finBruto:0,finLiquido:0,
             comDoc:0,qtEmpl:0,qtSN:0,premioQt:0,premioEmpl:0,premioSN:0,docsPerdidas:[],pagFormas:{},total:0};
   });
   lancAll().filter(l=>l.mes===mes&&l.status==='validado').forEach(l=>{
@@ -889,14 +993,14 @@ function calcularApuracao(mes){
         const key=p.tipo==='Financiamento'?`Financ. ${nomeBanco(p.banco)} ${p.retorno||'R0'}`:p.tipo;
         r.pagFormas[key]=(r.pagFormas[key]||0)+p.valor;
         if(p.tipo==='Financiamento'){
-          const rp=retornos()[p.retorno||'R0']||0;
-          r.comFin+=p.valor*(rp/100)*((c.pctVendFin!==undefined?c.pctVendFin:100)/100);
+          const f=calcFin(p.valor,p.retorno,mes);
+          r.valorFinanciado+=p.valor; r.finBruto+=f.bruto; r.finLiquido+=f.liquido;
+          r.comFin+=f.comissao;
         }
       });
       if(l.doc.status==='feita'){
         r.qtEmpl++;
-        const t=(c.docTabelas||[]).find(x=>x.id===l.doc.tabelaId);
-        if(t) r.comDoc+=((l.doc.valor||0)-(l.doc.desconto||0))*t.pct/100;
+        r.comDoc+=valorDoc(l.doc.tabelaId);
       }else r.docsPerdidas.push({moto:l.moto,motivo:l.doc.motivo,data:l.data});
     }else if(l.tipo==='acessorio') r.valorAcess+=l.valor;
     else r.qtSN++;
@@ -918,7 +1022,10 @@ function renderApuracao(){
   $('mesApu').textContent=nomeMes(mesAtual);
   const dsr=getDsrMes();
   $('dsrDomFer').value=dsr.domFer; $('dsrUteis').value=dsr.uteis;
-  $('dsrDomFer').disabled=$('dsrUteis').disabled=!isSup();
+  $('ilaMes').value=ilaDoMes(mesAtual);
+  $('infoImposto').textContent=impostoFin();
+  $('infoComFin').textContent=pctComVendFin();
+  $('dsrDomFer').disabled=$('dsrUteis').disabled=$('ilaMes').disabled=!isSup();
   $('exportCard').classList.toggle('hidden',!isSup());
   const res=calcularApuracao(mesAtual);
   const c=cfg()||{};
@@ -931,7 +1038,8 @@ function renderApuracao(){
       <div class="total-line"><span>Vendas de motos (${r.qtVendas})</span><b>${fmt(r.valorMotos)}</b></div>
       <div class="total-line"><span>Comissão motos (${c.pctMoto}%)</span><span>${fmt(r.comMotos)}</span></div>
       <div class="total-line"><span>DSR motos</span><span>${fmt(r.dsrMotos)}</span></div>
-      <div class="total-line"><span>Comissão financiamentos</span><span>${fmt(r.comFin)}</span></div>
+      <div class="total-line"><span>Valor financiado (${fmt(r.valorFinanciado)})</span><span class="muted">bruto ${fmt(r.finBruto)} · líq. ${fmt(r.finLiquido)}</span></div>
+      <div class="total-line"><span>Comissão financiamentos (${pctComVendFin()}% do líquido)</span><span>${fmt(r.comFin)}</span></div>
       <div class="total-line"><span>DSR financiamentos</span><span>${fmt(r.dsrFin)}</span></div>
       <div class="total-line"><span>Acessórios vendidos</span><span>${fmt(r.valorAcess)}</span></div>
       <div class="total-line"><span>Comissão acessórios (${c.pctAcess}%)</span><span>${fmt(r.comAcess)}</span></div>
@@ -950,10 +1058,12 @@ function renderApuracao(){
 }
 function exportarExcel(){
   const res=calcularApuracao(mesAtual);
-  const rows=[['Vendedor','Valor de Venda Motos','Comissão Motos','DSR Motos','Comissão Financiamentos','DSR Financiamentos','Comissão Acess.','DSR Acess.','Comissão Doc.','Prêmio Qt Vendas','Prêmio Emplacamento','Prêmio Moto SN','TOTAL']];
+  const rows=[['Vendedor','Valor de Venda Motos','Comissão Motos','DSR Motos','Valor Financiado','Retorno Bruto','Retorno Líquido','Comissão Financiamentos','DSR Financiamentos','Comissão Acess.','DSR Acess.','Comissão Doc.','Prêmio Qt Vendas','Prêmio Emplacamento','Prêmio Moto SN','TOTAL']];
   Object.entries(res).forEach(([v,r])=>{
-    rows.push([v,r.valorMotos,r.comMotos,r.dsrMotos,r.comFin,r.dsrFin,r.comAcess,r.dsrAcess,r.comDoc,r.premioQt,r.premioEmpl,r.premioSN,r.total]);
+    rows.push([v,r.valorMotos,r.comMotos,r.dsrMotos,r.valorFinanciado,r.finBruto,r.finLiquido,r.comFin,r.dsrFin,r.comAcess,r.dsrAcess,r.comDoc,r.premioQt,r.premioEmpl,r.premioSN,r.total]);
   });
+  rows.push([]);
+  rows.push(['Parâmetros do mês:','ILA %',ilaDoMes(mesAtual),'Imposto %',impostoFin(),'Comissão vend. financ. %',pctComVendFin()]);
   rows.push([]); rows.push(['DOCUMENTAÇÕES PERDIDAS']); rows.push(['Vendedor','Data','Moto','Motivo']);
   Object.entries(res).forEach(([v,r])=>r.docsPerdidas.forEach(d=>rows.push([v,d.data,d.moto,d.motivo])));
   rows.push([]); rows.push(['LANÇAMENTOS VALIDADOS DO MÊS']);
@@ -962,7 +1072,7 @@ function exportarExcel(){
     if(l.tipo==='venda'){
       rows.push([l.data,l.vendedor,'Venda Moto',l.moto,l.valorMoto,
         l.pagamentos.map(p=>`${p.tipo==='Financiamento'?'Financ. '+nomeBanco(p.banco)+' '+(p.retorno||''):p.tipo}: ${p.valor}`).join(' | '),
-        l.doc.status==='feita'?`${nomeTabela(l.doc.tabelaId)} R$${((l.doc.valor||0)-(l.doc.desconto||0)).toFixed(2)}`:`PERDIDA: ${l.doc.motivo}`, l.validadoPor||'']);
+        l.doc.status==='feita'?`${nomeTabela(l.doc.tabelaId)} · cobrado R$${((l.doc.valor||0)-(l.doc.desconto||0)).toFixed(2)} · comissão R$${valorDoc(l.doc.tabelaId).toFixed(2)}`:`PERDIDA: ${l.doc.motivo}`, l.validadoPor||'']);
     }else if(l.tipo==='acessorio') rows.push([l.data,l.vendedor,'Acessório',l.descricao||'',l.valor,'','',l.validadoPor||'']);
     else rows.push([l.data,l.vendedor,'Captação SN',l.descricao,(cfg()?.premioSeminovo)||0,'','',l.validadoPor||'']);
   });
@@ -994,12 +1104,18 @@ function renderAdmin(){
   <div class="card"><h2>🏦 Bancos de Financiamento</h2><div id="admBancos"></div>
     <div class="admin-row"><input id="novoBanco" placeholder="Nome do banco"><button class="btn sm" onclick="admAddBanco()">＋</button></div>
     <h3>Retornos (R0–R5)</h3>
-    <p class="muted">% de retorno sobre o valor financiado — usado no comissionamento e F&I</p>
+    <p class="muted">% de retorno sobre o valor financiado (cada R = 1,2%)</p>
     <div id="admRetornos"></div>
-    <label>Participação do vendedor no retorno (%)</label>
-    <input type="number" step="0.01" value="${c.pctVendFin!==undefined?c.pctVendFin:100}" onchange="admSet('pctVendFin',this.value)"></div>
+    <h3>Cadeia de cálculo do financiamento</h3>
+    <p class="muted">Retorno bruto → −ILA% → −imposto% → comissão do vendedor % sobre o líquido</p>
+    <label>ILA padrão (%) — usado quando o mês não tiver lançamento próprio</label>
+    <input type="number" step="0.01" value="${c.ilaPadrao!==undefined?c.ilaPadrao:26.05}" onchange="admSet('ilaPadrao',this.value)">
+    <label>Imposto (%)</label>
+    <input type="number" step="0.01" value="${c.impostoFin!==undefined?c.impostoFin:14.25}" onchange="admSet('impostoFin',this.value)">
+    <label>Comissão do vendedor sobre o líquido (%)</label>
+    <input type="number" step="0.01" value="${c.pctComissaoVendFin!==undefined?c.pctComissaoVendFin:10}" onchange="admSet('pctComissaoVendFin',this.value)"></div>
   <div class="card"><h2>📄 Tabelas de Documentação</h2>
-    <p class="muted">% = comissão sobre (valor − desconto)</p><div id="admDocs"></div></div>
+    <p class="muted">Valor fixo de comissão por documentação feita</p><div id="admDocs"></div></div>
   <div class="card"><h2>💵 Percentuais e Prêmios</h2>
     <label>Comissão motos (%)</label><input type="number" step="0.01" value="${c.pctMoto}" onchange="admSet('pctMoto',this.value)">
     <label>Comissão acessórios (%)</label><input type="number" step="0.01" value="${c.pctAcess}" onchange="admSet('pctAcess',this.value)">
@@ -1027,7 +1143,7 @@ function admRenderListas(){
   $('admMotos').innerHTML=(c.motos||[]).map((m,i)=>`<div class="admin-row"><input value="${m}" onchange="admEditStr('motos',${i},this.value)"><button class="mini" onclick="admRmStr('motos',${i})">🗑️</button></div>`).join('');
   $('admBancos').innerHTML=(c.bancos||[]).map((b,i)=>`<div class="admin-row"><input value="${b.nome}" onchange="admEditBanco(${i},'nome',this.value)"><button class="mini" onclick="admRmStr('bancos',${i})">🗑️</button></div>`).join('');
   $('admRetornos').innerHTML=Object.entries(retornos()).map(([r,pc])=>`<div class="admin-row"><span class="muted" style="width:36px">${r}</span><input class="narrow" type="number" step="0.1" value="${pc}" onchange="admEditRetorno('${r}',this.value)"><span class="muted">%</span></div>`).join('');
-  $('admDocs').innerHTML=(c.docTabelas||[]).map((t,i)=>`<div class="admin-row"><input value="${t.nome}" onchange="admEditDoc(${i},'nome',this.value)"><input class="narrow" type="number" step="0.01" value="${t.pct}" onchange="admEditDoc(${i},'pct',this.value)"><span class="muted">%</span></div>`).join('');
+  $('admDocs').innerHTML=(c.docTabelas||[]).map((t,i)=>`<div class="admin-row"><input value="${t.nome}" onchange="admEditDoc(${i},'nome',this.value)"><span class="muted">R$</span><input class="narrow" type="number" step="0.01" value="${t.valor!==undefined?t.valor:0}" onchange="admEditDoc(${i},'valor',this.value)"></div>`).join('');
   $('admFaixasQt').innerHTML=(c.faixasQt||[]).map((f,i)=>`<div class="admin-row"><span class="muted">≥</span><input class="narrow" type="number" value="${f.min}" onchange="admEditFaixa('faixasQt',${i},'min',this.value)"><span class="muted">vendas →</span><input type="number" value="${f.premio}" onchange="admEditFaixa('faixasQt',${i},'premio',this.value)"><button class="mini" onclick="admRmStr('faixasQt',${i})">🗑️</button></div>`).join('');
   $('admFaixasEmpl').innerHTML=(c.faixasEmpl||[]).map((f,i)=>`<div class="admin-row"><span class="muted">≥</span><input class="narrow" type="number" value="${f.min}" onchange="admEditFaixa('faixasEmpl',${i},'min',this.value)"><span class="muted">docs →</span><input type="number" value="${f.premio}" onchange="admEditFaixa('faixasEmpl',${i},'premio',this.value)"><button class="mini" onclick="admRmStr('faixasEmpl',${i})">🗑️</button></div>`).join('');
 }
@@ -1072,7 +1188,7 @@ function admAddBanco(){
 }
 function admEditBanco(i,campo,v){ cfg().bancos[i][campo]=v.toUpperCase(); saveConfig(); }
 function admEditRetorno(r,v){ const c=cfg(); c.retornos=retornos(); c.retornos[r]=parseFloat(v)||0; saveConfig(); }
-function admEditDoc(i,campo,v){ cfg().docTabelas[i][campo]=campo==='pct'?(parseFloat(v)||0):v; saveConfig(); renderFormBasics(); }
+function admEditDoc(i,campo,v){ cfg().docTabelas[i][campo]=campo==='valor'?(parseFloat(v)||0):v; saveConfig(); renderFormBasics(); }
 function admAddFaixa(lista,idMin,idPremio){
   const min=parseFloat($(idMin).value)||0, premio=parseFloat($(idPremio).value)||0;
   if(min<=0) return;
