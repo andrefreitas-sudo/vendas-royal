@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#123a7a">
+<title>Lançamento de Vendas Royal</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --card:#ffffff; --card2:#f5f7f9; --border:#e2e7ec;
+  --text:#333b43; --muted:#8b939c;
+  --accent:#00aeef; --accent2:#0087c8;
+  --green:#67a816; --red:#d9534f; --blue:#2067b3; --radius:10px;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+body{
+  background:#0b2551 linear-gradient(160deg,#0a1f45 0%,#123a7a 45%,#1b5aa8 100%) fixed;
+  color:var(--text);
+  font-family:'Helvetica Neue',Helvetica,Arial,'Segoe UI',Roboto,sans-serif;
+  padding-bottom:80px; min-height:100vh;
+}
+header{position:sticky; top:0; z-index:50; background:rgba(9,27,60,.72); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); border-bottom:1px solid rgba(255,255,255,.12); padding:12px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px}
+header h1{font-size:17px; color:#fff; font-weight:600; white-space:nowrap; letter-spacing:.2px}
+header .hright{display:flex; align-items:center; gap:10px; font-size:12px; color:rgba(255,255,255,.85)}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.dot.on{background:#8adf3e} .dot.pend{background:#ffc24b} .dot.off{background:#ff6b5e}
+.iconbtn{background:none;border:none;color:rgba(255,255,255,.85);font-size:18px;cursor:pointer;padding:2px 6px}
+main{padding:16px 14px; max-width:820px; margin:0 auto}
+nav.tabs{position:fixed; bottom:0; left:0; right:0; z-index:50; display:flex; background:rgba(9,27,60,.92); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); border-top:1px solid rgba(255,255,255,.12)}
+nav.tabs button{flex:1; background:none; border:none; color:rgba(255,255,255,.65); padding:9px 2px 13px; font-size:10px; display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer}
+nav.tabs button .ic{font-size:19px}
+nav.tabs button.active{color:#4fd2ff}
+.card{background:var(--card); border:1px solid rgba(255,255,255,.35); border-radius:var(--radius); padding:16px; margin-bottom:14px; box-shadow:0 2px 8px rgba(6,21,48,.25)}
+.card h2{font-size:15px; margin-bottom:12px; color:var(--text); font-weight:600; display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+.card h3{font-size:11px; margin:12px 0 8px; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; font-weight:600}
+label{display:block; font-size:12px; color:var(--muted); margin:10px 0 4px}
+input,select,textarea{width:100%; background:#fff; color:var(--text); border:1px solid #d5dbe1; border-radius:6px; padding:10px 12px; font-size:15px}
+input:focus,select:focus,textarea:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(0,174,239,.18)}
+input:disabled,select:disabled{background:#f0f2f5; color:var(--muted)}
+.row{display:flex; gap:10px} .row>*{flex:1}
+button.btn{width:100%; background:linear-gradient(180deg,#8fc63f,#67a816); color:#fff; font-weight:600; border:none; border-radius:24px; padding:12px; font-size:15px; margin-top:12px; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.15)}
+button.btn:active{transform:scale(.98)}
+button.btn.sec{background:#fff; color:var(--accent2); border:1px solid var(--accent); box-shadow:none}
+button.btn.sm{width:auto; padding:7px 16px; font-size:13px; margin-top:0}
+button.btn.danger{background:linear-gradient(180deg,#f0726a,#d9534f); color:#fff; border:none}
+button.btn.ok{background:linear-gradient(180deg,#8fc63f,#67a816); color:#fff}
+.mini{background:none; border:none; color:var(--red); font-size:17px; cursor:pointer; padding:4px 7px}
+.pay-item{display:flex; gap:8px; align-items:flex-end; margin-bottom:8px; background:var(--card2); border:1px solid var(--border); padding:10px; border-radius:8px; flex-wrap:wrap}
+.pay-item>div{flex:1; min-width:110px}
+.pay-item label{margin-top:0}
+.chip{display:inline-block; background:#fff; border:1px solid var(--border); border-radius:20px; padding:3px 10px; font-size:12px; margin:2px; color:var(--text)}
+.chip.red{border-color:#f3c1bf; background:#fdf0ef; color:#b94743}
+.chip.blue{border-color:#bcd7f0; background:#eef5fc; color:#2067b3}
+.chip.green{border-color:#cfe6ae; background:#f2f9e6; color:#4f8412}
+.toggle-group{display:flex; gap:8px; margin-top:6px}
+.toggle-group button{flex:1; background:#fff; border:1px solid #d5dbe1; color:var(--muted); border-radius:20px; padding:10px 6px; font-size:12px; cursor:pointer}
+.toggle-group button.on{background:var(--accent); color:#fff; font-weight:600; border-color:var(--accent)}
+.list-item{display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:#fff; border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:8px; margin-bottom:8px; gap:8px; flex-wrap:wrap; box-shadow:0 1px 3px rgba(6,21,48,.08)}
+.list-item .info{flex:1; min-width:180px}
+.list-item .t1{font-size:14px; font-weight:600; color:var(--text)}
+.list-item .t2{font-size:12px; color:var(--muted); margin-top:2px}
+.badge{font-size:10px; padding:3px 9px; border-radius:11px; font-weight:700; text-transform:uppercase; white-space:nowrap; letter-spacing:.3px}
+.badge.venda{background:#e9f5d8; color:#4f8412}
+.badge.acessorio{background:#e3f0fb; color:#2067b3}
+.badge.seminovo{background:#fdf3d7; color:#9a7208}
+.badge.pendente{background:#fff1d0; color:#b07f10}
+.badge.validado{background:#e9f5d8; color:#4f8412}
+.badge.rejeitado{background:#fdeae9; color:#b94743}
+.total-line{display:flex; justify-content:space-between; font-size:13px; padding:4px 0; border-bottom:1px dashed var(--border)}
+.total-line.big{font-size:16px; font-weight:700; color:var(--accent2); border-bottom:none; padding-top:8px}
+table{width:100%; border-collapse:collapse; font-size:12px}
+th,td{padding:7px 8px; text-align:right; border-bottom:1px solid var(--border); white-space:nowrap; color:var(--text)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted); font-size:10px; text-transform:uppercase; font-weight:600; background:#f8fafb}
+.scroll-x{overflow-x:auto; -webkit-overflow-scrolling:touch}
+.hidden{display:none!important}
+.warn{color:#c0392b; font-size:13px; margin-top:6px}
+.ok-text{color:#4f8412; font-size:13px; margin-top:6px}
+.muted{color:var(--muted); font-size:12px}
+.admin-row{display:flex; gap:8px; margin-bottom:8px; align-items:center; flex-wrap:wrap}
+.admin-row input{flex:1; min-width:100px}
+.admin-row input.narrow{max-width:90px; flex:none}
+.admin-row select{flex:1; min-width:110px}
+.toast{position:fixed; bottom:90px; left:50%; transform:translateX(-50%); background:#67a816; color:#fff; font-weight:600; padding:12px 24px; border-radius:30px; z-index:100; box-shadow:0 4px 20px rgba(0,0,0,.35); animation:fadein .2s; max-width:90vw; text-align:center}
+.toast.err{background:var(--red); color:#fff}
+@keyframes fadein{from{opacity:0; transform:translate(-50%,10px)}to{opacity:1; transform:translate(-50%,0)}}
+.doc-perda{background:#fdf0ef; border:1px solid #f3c1bf; border-radius:8px; padding:12px; margin-top:10px}
+.month-nav{display:flex; align-items:center; gap:10px; margin-bottom:14px}
+.month-nav button{background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.35); color:#fff; border-radius:8px; padding:8px 14px; font-size:16px; cursor:pointer}
+.month-nav .m{flex:1; text-align:center; font-weight:600; font-size:16px; color:#fff; text-transform:capitalize; background:linear-gradient(180deg,#29c1f0,#00aeef); border-radius:18px; padding:7px 12px; box-shadow:0 1px 4px rgba(6,21,48,.3)}
+.pbar{background:#edf1f4; border-radius:11px; height:22px; overflow:hidden; position:relative; margin-top:4px}
+.pbar>div{height:100%; background:linear-gradient(90deg,#29c1f0,#0087c8); border-radius:11px; transition:width .4s}
+.pbar.done>div{background:linear-gradient(90deg,#8fc63f,#67a816)}
+.pbar span{position:absolute; left:0; right:0; top:0; bottom:0; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#3a4148; text-shadow:0 1px 2px rgba(255,255,255,.6)}
+.meta-item{margin-bottom:12px}
+.meta-item .ml{display:flex; justify-content:space-between; font-size:12px; color:var(--muted)}
+.bigkpi{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:4px}
+.bigkpi .k{flex:1; min-width:130px; background:#f8fafb; border:1px solid var(--border); border-radius:8px; padding:12px; text-align:center}
+.bigkpi .k .v{font-size:20px; font-weight:700; color:var(--accent2)}
+.bigkpi .k .l{font-size:11px; color:var(--muted); margin-top:2px}
+.login-wrap{max-width:400px; margin:8vh auto 0; padding:0 16px}
+.login-wrap .logo{text-align:center; font-size:46px; margin-bottom:8px}
+.login-wrap h1{text-align:center; color:#fff; font-size:22px; font-weight:600; margin-bottom:20px; text-shadow:0 1px 4px rgba(0,0,0,.3)}
+a{color:var(--blue)}
+</style>
+</head>
+<body>
+
+<!-- ============ SETUP ============ -->
+<div id="scrSetup" class="login-wrap hidden">
+  <div class="logo">🏍️</div>
+  <h1>Configuração inicial</h1>
+  <div class="card">
+    <p class="muted">Conecte este aparelho ao banco de dados (repositório privado no GitHub). Peça a chave de acesso ao administrador.</p>
+    <label>Usuário/organização do GitHub</label>
+    <input id="cfgOwner" value="andrefreitas-sudo">
+    <label>Repositório de dados</label>
+    <input id="cfgRepo" value="vendas-motos-dados">
+    <label>Chave de acesso (token)</label>
+    <input id="cfgToken" type="password" placeholder="github_pat_...">
+    <button class="btn" onclick="salvarSetup()">Conectar</button>
+    <p id="setupMsg" class="muted" style="margin-top:8px"></p>
+  </div>
+</div>
+
+<!-- ============ LOGIN ============ -->
+<div id="scrLogin" class="login-wrap hidden">
+  <div class="logo">🏍️</div>
+  <h1>Lançamento de Vendas Royal</h1>
+  <div class="card">
+    <label>E-mail</label>
+    <input id="loginEmail" type="email" inputmode="email" autocomplete="username">
+    <label>Senha</label>
+    <input id="loginSenha" type="password" autocomplete="current-password">
+    <button class="btn" onclick="fazerLogin()">Entrar</button>
+    <p id="loginMsg" class="warn" style="margin-top:8px"></p>
+  </div>
+  <p class="muted" style="text-align:center"><button class="iconbtn" onclick="mostrarSetup()">⚙️ Configurar conexão</button></p>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="scrApp" class="hidden">
+<header>
+  <h1>🏍️ Vendas Royal</h1>
+  <div class="hright">
+    <span id="syncDot" class="dot off" title="status"></span>
+    <span id="userNome"></span>
+    <button class="iconbtn" title="Sincronizar" onclick="syncAll(true)">🔄</button>
+    <button class="iconbtn" title="Trocar senha" onclick="trocarSenha()">🔑</button>
+    <button class="iconbtn" title="Sair" onclick="logout()">🚪</button>
+  </div>
+</header>
+
+<main>
+  <!-- ============ BI ============ -->
+  <section id="tab-bi">
+    <div class="month-nav">
+      <button onclick="mudarMes(-1)">‹</button>
+      <div class="m" id="mesBi"></div>
+      <button onclick="mudarMes(1)">›</button>
+    </div>
+    <div id="biVisaoSel" class="hidden card" style="padding:10px 16px">
+      <label style="margin-top:0">Visão</label>
+      <select id="biVend" onchange="renderBI()"></select>
+      <button class="btn sec sm" id="btnMetas" style="margin-top:10px" onclick="abrirMetas()">🎯 Definir metas do mês</button>
+    </div>
+    <div id="biConteudo"></div>
+  </section>
+
+  <!-- ============ LANÇAR ============ -->
+  <section id="tab-lancar" class="hidden">
+    <div class="card">
+      <h2>Novo Lançamento</h2>
+      <label>Tipo de lançamento</label>
+      <div class="toggle-group" id="tipoLanc">
+        <button data-t="venda" class="on" onclick="setTipoLanc('venda')">🏍️ Venda</button>
+        <button data-t="acessorio" onclick="setTipoLanc('acessorio')">🧰 Acessório</button>
+        <button data-t="seminovo" onclick="setTipoLanc('seminovo')">♻️ Seminovo</button>
+      </div>
+      <div id="lancVendSelWrap" class="hidden">
+        <label>Lançar em nome de</label>
+        <select id="lancVendSel"></select>
+      </div>
+      <label>Data</label>
+      <input type="date" id="fData">
+      <div id="formVenda">
+        <label>Nome do cliente</label>
+        <input type="text" id="fCliente" placeholder="Nome completo do cliente">
+        <label>Moto vendida</label>
+        <select id="fMoto"></select>
+        <label>Versão</label>
+        <select id="fVersao"></select>
+        <label>Valor total da moto (R$)</label>
+        <input type="number" id="fValorMoto" step="0.01" inputmode="decimal" placeholder="0,00" oninput="pagStatus()">
+        <h3>Pagamentos</h3>
+        <div id="listaPagamentos"></div>
+        <button class="btn sec sm" onclick="addPagamento()">＋ Adicionar pagamento</button>
+        <div id="pagStatus"></div>
+        <h3>Acessórios na venda</h3>
+        <label>Valor de acessórios (R$) — opcional</label>
+        <input type="number" id="fAcessVenda" step="0.01" inputmode="decimal" placeholder="0,00">
+        <h3>Documentação</h3>
+        <div class="toggle-group" id="docStatus">
+          <button data-d="feita" class="on" onclick="setDocStatus('feita')">✅ Com documentação</button>
+          <button data-d="perda" onclick="setDocStatus('perda')">🚫 Sem documentação</button>
+        </div>
+        <div id="docFeita">
+          <div class="row">
+            <div><label>Valor (R$)</label><input type="number" id="fDocValor" step="0.01" inputmode="decimal"></div>
+            <div><label>Desconto (R$)</label><input type="number" id="fDocDesc" step="0.01" inputmode="decimal" value="0"></div>
+          </div>
+          <label>Tabela</label>
+          <select id="fDocTabela"></select>
+        </div>
+        <div id="docPerda" class="doc-perda hidden">
+          <label style="color:#c0392b">💬 Motivo da perda da documentação (obrigatório)</label>
+          <textarea id="fDocMotivo" rows="2" placeholder="Ex.: cliente fez no despachante próprio, preço..."></textarea>
+        </div>
+      </div>
+      <div id="formAcess" class="hidden">
+        <label>Nome do cliente</label>
+        <input type="text" id="fClienteAcess" placeholder="Nome completo do cliente">
+        <label>Descrição do acessório</label>
+        <input type="text" id="fAcessDesc" placeholder="Ex.: capacete, baú, película...">
+        <label>Valor (R$)</label>
+        <input type="number" id="fAcessValor" step="0.01" inputmode="decimal" placeholder="0,00">
+      </div>
+      <div id="formSeminovo" class="hidden">
+        <label>Moto captada (descrição)</label>
+        <input type="text" id="fSnMoto" placeholder="Ex.: CG 160 2021 vermelha">
+        <p class="muted" style="margin-top:8px">Prêmio fixo por captação: <b id="snPremioInfo"></b></p>
+      </div>
+      <p class="muted" style="margin-top:10px">⏳ O lançamento entra como <b>pendente</b> e só computa nos resultados após validação do supervisor.</p>
+      <button class="btn" id="btnSalvar" onclick="salvarLancamento()">💾 Salvar Lançamento</button>
+      <button class="btn sec hidden" id="btnCancelEdit" onclick="cancelarEdicao()">Cancelar edição</button>
+    </div>
+  </section>
+
+  <!-- ============ LISTA ============ -->
+  <section id="tab-lista" class="hidden">
+    <div class="month-nav">
+      <button onclick="mudarMes(-1)">‹</button>
+      <div class="m" id="mesLista"></div>
+      <button onclick="mudarMes(1)">›</button>
+    </div>
+    <div class="card">
+      <h2>Lançamentos</h2>
+      <div id="filtroVendWrap" class="hidden">
+        <label>Filtrar vendedor</label>
+        <select id="filtroVend" onchange="renderLista()"></select>
+      </div>
+      <div id="listaLanc" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <!-- ============ VALIDAÇÃO ============ -->
+  <section id="tab-validar" class="hidden">
+    <div class="month-nav">
+      <button onclick="mudarMes(-1)">‹</button>
+      <div class="m" id="mesVal"></div>
+      <button onclick="mudarMes(1)">›</button>
+    </div>
+    <div class="card">
+      <h2>⏳ Aguardando validação</h2>
+      <div id="listaPendentes"></div>
+    </div>
+    <div class="card">
+      <h2>📁 Já tratados no mês (validados e rejeitados)</h2>
+      <div id="listaRejeitados"></div>
+    </div>
+  </section>
+
+  <!-- ============ APURAÇÃO ============ -->
+  <section id="tab-apuracao" class="hidden">
+    <div class="month-nav">
+      <button onclick="mudarMes(-1)">‹</button>
+      <div class="m" id="mesApu"></div>
+      <button onclick="mudarMes(1)">›</button>
+    </div>
+    <div class="card" id="dsrCard">
+      <h2>Parâmetros DSR do mês</h2>
+      <div class="row">
+        <div><label>Domingos + feriados</label><input type="number" id="dsrDomFer" onchange="salvarDsrMes()"></div>
+        <div><label>Dias úteis</label><input type="number" id="dsrUteis" onchange="salvarDsrMes()"></div>
+      </div>
+      <label>ILA do mês (%) — desconto sobre o retorno do financiamento</label>
+      <input type="number" step="0.01" id="ilaMes" onchange="salvarIlaMes()">
+      <p class="muted" style="margin-top:6px">DSR = comissão × (domingos+feriados ÷ dias úteis).<br>
+      Financiamento: retorno bruto → −ILA → −imposto <span id="infoImposto"></span>% → comissão do vendedor <span id="infoComFin"></span>% do líquido.<br>
+      Somente lançamentos <b>validados</b> entram na apuração.</p>
+    </div>
+    <div id="apuResultado"></div>
+    <div class="card" id="exportCard">
+      <h2>Exportar</h2>
+      <button class="btn" onclick="exportarExcel()">📊 Exportar Excel (apuração)</button>
+    </div>
+  </section>
+
+  <!-- ============ ADMIN ============ -->
+  <section id="tab-admin" class="hidden">
+    <div id="adminArea"></div>
+  </section>
+</main>
+
+<nav class="tabs" id="navTabs"></nav>
+</div>
+
+<script>
+/* ================= HELPERS ================= */
+const $=id=>document.getElementById(id);
+function fmt(v){ return (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+function num(id){ return parseFloat($(id).value)||0; }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function toast(msg,err){
+  const t=document.createElement('div'); t.className='toast'+(err?' err':''); t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(),2800);
+}
+function nomeMes(ym){ const [y,m]=ym.split('-'); return new Date(y,m-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}); }
+async function sha256(s){
+  const b=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function b64enc(s){ return btoa(unescape(encodeURIComponent(s))); }
+function b64dec(s){ return decodeURIComponent(escape(atob(s.replace(/\n/g,'')))); }
+
+/* ================= ESTADO ================= */
+let GH=JSON.parse(localStorage.getItem('mv2_gh')||'null');
+let SESSION=JSON.parse(localStorage.getItem('mv2_session')||'null');
+let CACHE=JSON.parse(localStorage.getItem('mv2_cache')||'{"usuarios":null,"config":null,"lancamentos":null}');
+let OUTBOX=JSON.parse(localStorage.getItem('mv2_outbox')||'[]');
+let mesAtual=new Date().toISOString().slice(0,7);
+let pagamentos=[], tipoLanc='venda', docStatusSel='feita', editId=null, tabAtiva='bi', syncing=false;
+
+function saveLocal(){
+  localStorage.setItem('mv2_cache',JSON.stringify(CACHE));
+  localStorage.setItem('mv2_outbox',JSON.stringify(OUTBOX));
+}
+function cfg(){ return CACHE.config?CACHE.config.data:null; }
+function usuarios(){ return CACHE.usuarios?CACHE.usuarios.data:[]; }
+function vendedores(){ return usuarios().filter(u=>u.role==='vendedor'&&u.ativo!==false).map(u=>u.nome); }
+function isSup(){ return SESSION&&(SESSION.role==='supervisor'||SESSION.role==='admin'); }
+function retornos(){ return (cfg()&&cfg().retornos)||{R0:0,R1:1.2,R2:2.4,R3:3.6,R4:4.8,R5:6}; }
+function ilaDoMes(mes){
+  const c=cfg()||{};
+  const v=(c.ilaMeses||{})[mes];
+  return v!==undefined&&v!==null?v:(c.ilaPadrao!==undefined?c.ilaPadrao:26.05);
+}
+function impostoFin(){ const c=cfg()||{}; return c.impostoFin!==undefined?c.impostoFin:14.25; }
+function pctComVendFin(){ const c=cfg()||{}; return c.pctComissaoVendFin!==undefined?c.pctComissaoVendFin:10; }
+/* Cálculo do financiamento: bruto = valor × retorno% → −ILA% → −imposto% → comissão do vendedor % */
+function calcFin(valor,retorno,mes){
+  const rp=retornos()[retorno||'R0']||0;
+  const bruto=valor*rp/100;
+  const ila=ilaDoMes(mes);
+  const posIla=bruto*(1-ila/100);
+  const liquido=posIla*(1-impostoFin()/100);
+  const comissao=liquido*pctComVendFin()/100;
+  return {rp,bruto,ila,posIla,liquido,comissao};
+}
+function valorDoc(tabelaId){
+  const t=(cfg()?.docTabelas||[]).find(x=>x.id===tabelaId);
+  if(!t) return 0;
+  return t.valor!==undefined?t.valor:0;
+}
+function isAdmin(){ return SESSION&&SESSION.role==='admin'; }
+
+/* lançamentos = cache remoto + operações pendentes (outbox) */
+function lancAll(){
+  let arr=(CACHE.lancamentos?CACHE.lancamentos.data:[]).slice();
+  OUTBOX.forEach(op=>{
+    if(op.file!=='lancamentos') return;
+    if(op.op==='delete') arr=arr.filter(x=>x.id!==op.id);
+    else{ const i=arr.findIndex(x=>x.id===op.record.id); if(i>=0)arr[i]=op.record; else arr.push(op.record); }
+  });
+  return arr;
+}
+function lancVisiveis(){
+  const all=lancAll();
+  return isSup()?all:all.filter(l=>l.vendedor===SESSION.nome);
+}
+
+/* ================= GITHUB API ================= */
+const API='https://api.github.com/repos/';
+function ghHeaders(){ return {'Authorization':'Bearer '+GH.token,'Accept':'application/vnd.github+json'}; }
+async function ghGet(file){
+  const r=await fetch(API+GH.owner+'/'+GH.repo+'/contents/'+file+'.json?ref=main&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'});
+  if(!r.ok) throw new Error('GET '+file+' '+r.status);
+  const j=await r.json();
+  return {data:JSON.parse(b64dec(j.content)), sha:j.sha};
+}
+async function ghPut(file,data,sha,msg){
+  const body={message:msg||('update '+file),content:b64enc(JSON.stringify(data,null,1)),branch:'main'};
+  if(sha) body.sha=sha;
+  const r=await fetch(API+GH.owner+'/'+GH.repo+'/contents/'+file+'.json',{method:'PUT',headers:ghHeaders(),body:JSON.stringify(body)});
+  if(!r.ok) throw new Error('PUT '+file+' '+r.status);
+  const j=await r.json();
+  return j.content.sha;
+}
+
+/* ================= SYNC ================= */
+function setDot(cls){ const d=$('syncDot'); if(d){d.className='dot '+cls;} }
+async function flushOutbox(){
+  if(!OUTBOX.length) return;
+  /* lançamentos: read-modify-write */
+  const lops=OUTBOX.filter(o=>o.file==='lancamentos');
+  if(lops.length){
+    for(let tent=0;tent<2;tent++){
+      try{
+        const remote=await ghGet('lancamentos');
+        let arr=remote.data;
+        lops.forEach(op=>{
+          if(op.op==='delete') arr=arr.filter(x=>x.id!==op.id);
+          else{
+            const i=arr.findIndex(x=>x.id===op.record.id);
+            if(i>=0){ if(!arr[i].updatedAt||op.record.updatedAt>=arr[i].updatedAt) arr[i]=op.record; }
+            else arr.push(op.record);
+          }
+        });
+        const sha=await ghPut('lancamentos',arr,remote.sha,'lançamentos por '+SESSION.nome);
+        CACHE.lancamentos={data:arr,sha};
+        OUTBOX=OUTBOX.filter(o=>o.file!=='lancamentos');
+        break;
+      }catch(e){ if(tent===1) throw e; }
+    }
+  }
+  /* config / usuarios: full file */
+  for(const f of ['config','usuarios']){
+    const ops=OUTBOX.filter(o=>o.file===f);
+    if(!ops.length) continue;
+    for(let tent=0;tent<2;tent++){
+      try{
+        let sha=null;
+        try{ const rem=await ghGet(f); sha=rem.sha; }catch(e){}
+        const data=ops[ops.length-1].data;
+        const nsha=await ghPut(f,data,sha,f+' por '+SESSION.nome);
+        CACHE[f]={data,sha:nsha};
+        OUTBOX=OUTBOX.filter(o=>o.file!==f);
+        break;
+      }catch(e){ if(tent===1) throw e; }
+    }
+  }
+  saveLocal();
+}
+async function syncAll(manual){
+  if(!GH||syncing) return;
+  syncing=true;
+  try{
+    await flushOutbox();
+    const [u,c,l]=await Promise.all([ghGet('usuarios'),ghGet('config'),ghGet('lancamentos')]);
+    CACHE.usuarios=u; CACHE.config=c; CACHE.lancamentos=l;
+    saveLocal();
+    setDot(OUTBOX.length?'pend':'on');
+    if(SESSION){ renderTabAtual(); }
+    if(manual) toast('Sincronizado!');
+  }catch(e){
+    setDot(navigator.onLine?(OUTBOX.length?'pend':'on'):'off');
+    if(manual) toast('Sem conexão — dados salvos no aparelho', true);
+  }
+  syncing=false;
+}
+function queue(op){
+  OUTBOX.push(op); saveLocal(); setDot('pend');
+  syncAll(); /* tenta na hora; se offline, fica na fila */
+}
+window.addEventListener('online',()=>syncAll());
+window.addEventListener('offline',()=>setDot('off'));
+setInterval(()=>syncAll(),60000);
+
+/* ================= TELAS ================= */
+function show(scr){
+  ['scrSetup','scrLogin','scrApp'].forEach(s=>$(s).classList.toggle('hidden',s!==scr));
+}
+function mostrarSetup(){ show('scrSetup'); }
+async function salvarSetup(){
+  const owner=$('cfgOwner').value.trim(), repo=$('cfgRepo').value.trim(), token=$('cfgToken').value.trim();
+  if(!owner||!repo||!token){ $('setupMsg').textContent='Preencha todos os campos.'; return; }
+  $('setupMsg').textContent='Testando conexão...';
+  GH={owner,repo,token};
+  try{
+    const u=await ghGet('usuarios');
+    CACHE.usuarios=u; saveLocal();
+    localStorage.setItem('mv2_gh',JSON.stringify(GH));
+    $('setupMsg').textContent='';
+    toast('Conectado!');
+    show('scrLogin');
+  }catch(e){
+    GH=JSON.parse(localStorage.getItem('mv2_gh')||'null');
+    $('setupMsg').textContent='❌ Falha na conexão. Confira usuário, repositório e token. ('+e.message+')';
+  }
+}
+async function fazerLogin(){
+  const email=$('loginEmail').value.trim().toLowerCase(), senha=$('loginSenha').value;
+  if(!email||!senha){ $('loginMsg').textContent='Informe e-mail e senha.'; return; }
+  $('loginMsg').textContent='';
+  try{ const u=await ghGet('usuarios'); CACHE.usuarios=u; saveLocal(); }catch(e){}
+  const hash=await sha256(senha);
+  const user=usuarios().find(u=>u.email.toLowerCase()===email&&u.ativo!==false);
+  if(!user||user.senhaHash!==hash){ $('loginMsg').textContent='E-mail ou senha incorretos.'; return; }
+  SESSION={id:user.id,email:user.email,nome:user.nome,role:user.role};
+  localStorage.setItem('mv2_session',JSON.stringify(SESSION));
+  entrarApp();
+}
+function logout(){
+  SESSION=null; localStorage.removeItem('mv2_session');
+  show('scrLogin');
+}
+async function trocarSenha(){
+  const atual=prompt('Senha atual:'); if(atual===null) return;
+  const hash=await sha256(atual);
+  const users=usuarios();
+  const me=users.find(u=>u.id===SESSION.id);
+  if(!me||me.senhaHash!==hash) return toast('Senha atual incorreta', true);
+  const nova=prompt('Nova senha (mín. 6 caracteres):'); if(nova===null) return;
+  if(nova.length<6) return toast('Senha muito curta', true);
+  me.senhaHash=await sha256(nova);
+  queue({file:'usuarios',op:'full',data:users});
+  toast('Senha alterada!');
+}
+
+/* ================= APP / NAV ================= */
+const TABS=[
+  {id:'bi',ic:'📈',label:'Resultados',roles:['vendedor','supervisor','admin']},
+  {id:'lancar',ic:'➕',label:'Lançar',roles:['vendedor','supervisor','admin']},
+  {id:'lista',ic:'📋',label:'Lançamentos',roles:['vendedor','supervisor','admin']},
+  {id:'validar',ic:'✅',label:'Validar',roles:['supervisor','admin']},
+  {id:'apuracao',ic:'💰',label:'Apuração',roles:['vendedor','supervisor','admin']},
+  {id:'admin',ic:'⚙️',label:'Admin',roles:['admin']}
+];
+function entrarApp(){
+  show('scrApp');
+  $('userNome').textContent=SESSION.nome+' ('+(SESSION.role==='admin'?'Adm':SESSION.role==='supervisor'?'Superv.':'Vend.')+')';
+  const nav=$('navTabs');
+  nav.innerHTML=TABS.filter(t=>t.roles.includes(SESSION.role)).map(t=>
+    `<button data-tab="${t.id}" onclick="showTab('${t.id}')"><span class="ic">${t.ic}</span>${t.label}</button>`).join('');
+  renderFormBasics();
+  showTab('bi');
+  syncAll();
+}
+function showTab(t){
+  tabAtiva=t;
+  TABS.forEach(x=>{ const el=$('tab-'+x.id); if(el) el.classList.toggle('hidden',x.id!==t); });
+  document.querySelectorAll('#navTabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
+  renderTabAtual();
+}
+function renderTabAtual(){
+  if(!SESSION) return;
+  if(tabAtiva==='bi') renderBI();
+  if(tabAtiva==='lista') renderLista();
+  if(tabAtiva==='validar') renderValidar();
+  if(tabAtiva==='apuracao') renderApuracao();
+  if(tabAtiva==='admin') renderAdmin();
+}
+function mudarMes(d){
+  const [y,m]=mesAtual.split('-').map(Number);
+  mesAtual=new Date(y,m-1+d,15).toISOString().slice(0,7);
+  renderTabAtual();
+}
+
+/* ================= B.I / METAS ================= */
+function metasDe(mes,nome){
+  const c=cfg(); if(!c) return {};
+  return ((c.metas||{})[mes]||{})[nome]||{};
+}
+function statsDe(mes,nome){
+  const ls=lancAll().filter(l=>l.mes===mes&&l.status==='validado'&&(!nome||l.vendedor===nome));
+  const pend=lancAll().filter(l=>l.mes===mes&&l.status==='pendente'&&(!nome||l.vendedor===nome)).length;
+  const s={qtMotos:0,valorMotos:0,qtDocs:0,docsPerdidas:0,valorAcess:0,qtSN:0,pendentes:pend};
+  ls.forEach(l=>{
+    if(l.tipo==='venda'){
+      s.qtMotos++; s.valorMotos+=l.valorMoto; s.valorAcess+=l.valorAcess||0;
+      if(l.doc.status==='feita') s.qtDocs++; else s.docsPerdidas++;
+    }else if(l.tipo==='acessorio') s.valorAcess+=l.valor;
+    else s.qtSN++;
+  });
+  return s;
+}
+function pbarHtml(real,meta,fmtFn){
+  const f=fmtFn||(x=>x);
+  const pct=meta>0?Math.min(100,real/meta*100):0;
+  return `<div class="pbar ${real>=meta&&meta>0?'done':''}"><div style="width:${pct}%"></div><span>${f(real)} / ${meta>0?f(meta):'—'} ${meta>0?'('+Math.round(real/meta*100)+'%)':''}</span></div>`;
+}
+function biCard(titulo,mes,nome){
+  const s=statsDe(mes,nome), m=nome?metasDe(mes,nome):metasGeral(mes);
+  const aprov=(s.qtDocs+s.docsPerdidas)>0?Math.round(s.qtDocs/(s.qtDocs+s.docsPerdidas)*100):null;
+  return `<div class="card">
+    <h2>${titulo}</h2>
+    <div class="bigkpi">
+      <div class="k"><div class="v">${s.qtMotos}</div><div class="l">Motos vendidas</div></div>
+      <div class="k"><div class="v">${fmt(s.valorMotos)}</div><div class="l">Valor em motos</div></div>
+      <div class="k"><div class="v">${s.qtDocs}</div><div class="l">Documentações</div></div>
+    </div>
+    <div class="bigkpi">
+      <div class="k"><div class="v">${fmt(s.valorAcess)}</div><div class="l">Acessórios</div></div>
+      <div class="k"><div class="v">${s.qtSN}</div><div class="l">Seminovos captados</div></div>
+      <div class="k"><div class="v">${aprov===null?'—':aprov+'%'}</div><div class="l">Aproveitamento doc.</div></div>
+    </div>
+    <h3>🎯 Metas</h3>
+    <div class="meta-item"><div class="ml"><span>Motos vendidas</span></div>${pbarHtml(s.qtMotos,m.qtMotos||0)}</div>
+    <div class="meta-item"><div class="ml"><span>Documentações</span></div>${pbarHtml(s.qtDocs,m.qtDocs||0)}</div>
+    <div class="meta-item"><div class="ml"><span>Acessórios (R$)</span></div>${pbarHtml(s.valorAcess,m.valorAcess||0,fmt)}</div>
+    <div class="meta-item"><div class="ml"><span>Seminovos captados</span></div>${pbarHtml(s.qtSN,m.qtSN||0)}</div>
+    ${s.pendentes?`<p class="muted">⏳ ${s.pendentes} lançamento(s) aguardando validação (não computados).</p>`:''}
+  </div>`;
+}
+function metasGeral(mes){
+  const g={qtMotos:0,qtDocs:0,valorAcess:0,qtSN:0};
+  vendedores().forEach(v=>{ const m=metasDe(mes,v); g.qtMotos+=m.qtMotos||0; g.qtDocs+=m.qtDocs||0; g.valorAcess+=m.valorAcess||0; g.qtSN+=m.qtSN||0; });
+  return g;
+}
+function renderBI(){
+  $('mesBi').textContent=nomeMes(mesAtual);
+  const wrap=$('biVisaoSel');
+  let html='';
+  if(isSup()){
+    wrap.classList.remove('hidden');
+    $('btnMetas').classList.toggle('hidden',!isAdmin()); /* metas: somente administrador */
+    const sel=$('biVend');
+    const cur=sel.value;
+    sel.innerHTML='<option value="">🌐 Visão geral</option>'+vendedores().map(v=>`<option ${cur===v?'selected':''}>${v}</option>`).join('');
+    const escolhido=sel.value;
+    if(escolhido){ html=biCard('👤 '+escolhido,mesAtual,escolhido); }
+    else{
+      html=biCard('🌐 Resultado geral da loja',mesAtual,null);
+      /* ranking */
+      const rows=vendedores().map(v=>{const s=statsDe(mesAtual,v);return {v,...s};}).sort((a,b)=>b.valorMotos-a.valorMotos);
+      html+=`<div class="card"><h2>🏆 Ranking do mês</h2><div class="scroll-x"><table>
+        <tr><th>Vendedor</th><th>Motos</th><th>Valor</th><th>Docs</th><th>Acess.</th><th>SN</th><th>Pend.</th></tr>
+        ${rows.map((r,i)=>`<tr><td>${i===0&&r.qtMotos>0?'🥇 ':''}${r.v}</td><td>${r.qtMotos}</td><td>${fmt(r.valorMotos)}</td><td>${r.qtDocs}</td><td>${fmt(r.valorAcess)}</td><td>${r.qtSN}</td><td>${r.pendentes||''}</td></tr>`).join('')}
+      </table></div></div>`;
+    }
+  }else{
+    wrap.classList.add('hidden');
+    html=biCard('👤 Meus resultados — '+SESSION.nome,mesAtual,SESSION.nome);
+  }
+  $('biConteudo').innerHTML=html;
+}
+function abrirMetas(){
+  const c=cfg(); if(!c) return toast('Sem conexão com os dados', true);
+  c.metas=c.metas||{}; c.metas[mesAtual]=c.metas[mesAtual]||{};
+  const mm=c.metas[mesAtual];
+  let html=`<div class="card"><h2>🎯 Metas de ${nomeMes(mesAtual)}</h2><div class="scroll-x"><table>
+    <tr><th>Vendedor</th><th>Motos</th><th>Docs</th><th>Acess. R$</th><th>Seminovos</th></tr>`;
+  vendedores().forEach(v=>{
+    const m=mm[v]||{};
+    html+=`<tr><td>${v}</td>
+      <td><input style="width:70px" type="number" id="mt_${v}_qtMotos" value="${m.qtMotos||''}"></td>
+      <td><input style="width:70px" type="number" id="mt_${v}_qtDocs" value="${m.qtDocs||''}"></td>
+      <td><input style="width:90px" type="number" id="mt_${v}_valorAcess" value="${m.valorAcess||''}"></td>
+      <td><input style="width:70px" type="number" id="mt_${v}_qtSN" value="${m.qtSN||''}"></td></tr>`;
+  });
+  html+=`</table></div><button class="btn" onclick="salvarMetas()">Salvar metas</button>
+    <button class="btn sec" onclick="renderBI()">Cancelar</button></div>`;
+  $('biConteudo').innerHTML=html;
+}
+function salvarMetas(){
+  const c=cfg();
+  c.metas[mesAtual]=c.metas[mesAtual]||{};
+  vendedores().forEach(v=>{
+    c.metas[mesAtual][v]={
+      qtMotos:parseFloat($('mt_'+v+'_qtMotos').value)||0,
+      qtDocs:parseFloat($('mt_'+v+'_qtDocs').value)||0,
+      valorAcess:parseFloat($('mt_'+v+'_valorAcess').value)||0,
+      qtSN:parseFloat($('mt_'+v+'_qtSN').value)||0
+    };
+  });
+  queue({file:'config',op:'full',data:c});
+  toast('Metas salvas!');
+  renderBI();
+}
+
+/* ================= FORM LANÇAMENTO ================= */
+function renderFormBasics(){
+  const c=cfg()||{motos:[],docTabelas:[],premioSeminovo:0};
+  $('fMoto').innerHTML=(c.motos||[]).map(m=>`<option>${m}</option>`).join('');
+  $('fVersao').innerHTML='<option value="">—</option>'+(c.versoes||[]).map(v=>`<option>${v}</option>`).join('');
+  $('fDocTabela').innerHTML=(c.docTabelas||[]).map(t=>`<option value="${t.id}">${t.nome}</option>`).join('');
+  $('snPremioInfo').textContent=fmt(c.premioSeminovo);
+  $('fData').value=new Date().toISOString().slice(0,10);
+  if(isSup()){
+    $('lancVendSelWrap').classList.remove('hidden');
+    $('lancVendSel').innerHTML=vendedores().map(v=>`<option>${v}</option>`).join('');
+  }
+  pagamentos=[{tipo:'À Vista',banco:'',valor:0}];
+  renderPagamentos();
+}
+function setTipoLanc(t){
+  tipoLanc=t;
+  document.querySelectorAll('#tipoLanc button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  $('formVenda').classList.toggle('hidden',t!=='venda');
+  $('formAcess').classList.toggle('hidden',t!=='acessorio');
+  $('formSeminovo').classList.toggle('hidden',t!=='seminovo');
+}
+function setDocStatus(d){
+  docStatusSel=d;
+  document.querySelectorAll('#docStatus button').forEach(b=>b.classList.toggle('on',b.dataset.d===d));
+  $('docFeita').classList.toggle('hidden',d!=='feita');
+  $('docPerda').classList.toggle('hidden',d!=='perda');
+}
+function addPagamento(){ pagamentos.push({tipo:'À Vista',banco:'',retorno:'R0',valor:0,juros:0}); renderPagamentos(); }
+function jurosLanc(l){ return (l.pagamentos||[]).reduce((s,p)=>s+(p.tipo==='Cartão'?(p.juros||0):0),0); }
+function rmPagamento(i){ pagamentos.splice(i,1); renderPagamentos(); }
+function updPag(i,campo,val){
+  pagamentos[i][campo]= (campo==='valor'||campo==='juros')?(parseFloat(val)||0):val;
+  if(campo==='tipo'&&val!=='Financiamento') pagamentos[i].banco='';
+  if(campo==='tipo'&&val!=='Cartão') pagamentos[i].juros=0;
+  if(campo==='tipo') renderPagamentos(); else pagStatus();
+}
+function renderPagamentos(){
+  const c=cfg()||{bancos:[]};
+  $('listaPagamentos').innerHTML=pagamentos.map((p,i)=>`
+    <div class="pay-item">
+      <div><label>Forma</label>
+        <select onchange="updPag(${i},'tipo',this.value)">
+          ${['À Vista','Cartão','Financiamento','Consórcio'].map(t=>`<option ${p.tipo===t?'selected':''}>${t}</option>`).join('')}
+        </select></div>
+      ${p.tipo==='Financiamento'?`<div><label>Banco</label>
+        <select onchange="updPag(${i},'banco',this.value)">
+          <option value="">Selecione...</option>
+          ${(c.bancos||[]).map(b=>`<option value="${b.id}" ${p.banco===b.id?'selected':''}>${b.nome}</option>`).join('')}
+        </select></div>
+      <div><label>Retorno</label>
+        <select onchange="updPag(${i},'retorno',this.value)">
+          ${Object.entries(retornos()).map(([r,pc])=>`<option value="${r}" ${(p.retorno||'R0')===r?'selected':''}>${r} (${pc}%)</option>`).join('')}
+        </select></div>`:''}
+      <div><label>Valor (R$)</label>
+        <input type="number" step="0.01" inputmode="decimal" value="${p.valor||''}" onchange="updPag(${i},'valor',this.value)"></div>
+      ${p.tipo==='Cartão'?`<div><label>Juros (R$)</label>
+        <input type="number" step="0.01" inputmode="decimal" value="${p.juros||''}" placeholder="0,00" onchange="updPag(${i},'juros',this.value)"></div>`:''}
+      <button class="mini" onclick="rmPagamento(${i})">🗑️</button>
+    </div>`).join('');
+  pagStatus();
+}
+function pagStatus(){
+  const el=$('pagStatus');
+  const tot=pagamentos.reduce((s,p)=>s+p.valor,0);
+  const vm=num('fValorMoto');
+  if(!pagamentos.length){ el.innerHTML='<p class="muted">Nenhum pagamento adicionado.</p>'; return; }
+  const dif=vm-tot;
+  const juros=pagamentos.reduce((s,p)=>s+(p.tipo==='Cartão'?(p.juros||0):0),0);
+  el.innerHTML= (Math.abs(dif)<0.01
+    ? `<p class="ok-text">✅ Pagamentos somam ${fmt(tot)} — confere.</p>`
+    : `<p class="warn">⚠️ Pagamentos somam ${fmt(tot)} — ${dif>0?'faltam':'excedem'} ${fmt(Math.abs(dif))}.</p>`)
+    + (juros>0?`<p class="muted">💳 Juros de cartão: ${fmt(juros)} — lançado como excedente, fora do valor da moto.</p>`:'');
+}
+function salvarLancamento(){
+  const data=$('fData').value||new Date().toISOString().slice(0,10);
+  const vend=isSup()?$('lancVendSel').value:SESSION.nome;
+  if(!vend) return toast('Sem vendedor', true);
+  const antigo=editId?lancAll().find(x=>x.id===editId):null;
+  let l={id:editId||uid(), tipo:tipoLanc, vendedor:vend, data, mes:data.slice(0,7),
+         status:'pendente', criadoPor:(antigo&&antigo.criadoPor)||SESSION.nome, updatedAt:Date.now()};
+  if(antigo&&isSup()){ l.status=antigo.status; l.validadoPor=antigo.validadoPor; l.motivoRejeicao=antigo.motivoRejeicao; }
+  if(tipoLanc==='venda'){
+    const cli=$('fCliente').value.trim();
+    if(!cli) return toast('Informe o nome do cliente', true);
+    const vm=num('fValorMoto');
+    if(vm<=0) return toast('Informe o valor da moto', true);
+    if(!pagamentos.length) return toast('Adicione ao menos um pagamento', true);
+    const tot=pagamentos.reduce((s,p)=>s+p.valor,0);
+    if(Math.abs(tot-vm)>=0.01) return toast('Pagamentos não conferem com o valor da moto', true);
+    if(pagamentos.some(p=>p.tipo==='Financiamento'&&!p.banco)) return toast('Selecione o banco do financiamento', true);
+    l.cliente=cli; l.moto=$('fMoto').value; l.versao=$('fVersao').value; l.valorMoto=vm;
+    l.pagamentos=JSON.parse(JSON.stringify(pagamentos));
+    l.valorAcess=num('fAcessVenda');
+    if(docStatusSel==='feita'){
+      l.doc={status:'feita', valor:num('fDocValor'), desconto:num('fDocDesc'), tabelaId:$('fDocTabela').value};
+    }else{
+      const motivo=$('fDocMotivo').value.trim();
+      if(!motivo) return toast('Informe o motivo da perda da documentação', true);
+      l.doc={status:'perda', motivo};
+    }
+  }else if(tipoLanc==='acessorio'){
+    const cliA=$('fClienteAcess').value.trim();
+    if(!cliA) return toast('Informe o nome do cliente', true);
+    const v=num('fAcessValor');
+    if(v<=0) return toast('Informe o valor do acessório', true);
+    l.cliente=cliA; l.descricao=$('fAcessDesc').value.trim(); l.valor=v;
+  }else{
+    const d=$('fSnMoto').value.trim();
+    if(!d) return toast('Descreva a moto captada', true);
+    l.descricao=d;
+  }
+  queue({file:'lancamentos',op:'upsert',record:l});
+  toast(editId?'Lançamento atualizado — aguardando validação':'Salvo! Aguardando validação do supervisor');
+  limparForm();
+  showTab('lista');
+}
+function limparForm(){
+  editId=null;
+  $('btnCancelEdit').classList.add('hidden');
+  $('btnSalvar').textContent='💾 Salvar Lançamento';
+  ['fValorMoto','fAcessVenda','fDocValor','fDocMotivo','fAcessDesc','fAcessValor','fSnMoto','fCliente','fClienteAcess'].forEach(id=>$(id).value='');
+  $('fVersao').value='';
+  $('fDocDesc').value='0';
+  $('fData').value=new Date().toISOString().slice(0,10);
+  setDocStatus('feita');
+  pagamentos=[{tipo:'À Vista',banco:'',valor:0}];
+  renderPagamentos();
+}
+function cancelarEdicao(){ limparForm(); }
+function podeEditar(l){
+  if(isSup()) return true;                       /* supervisor e admin: alteram qualquer lançamento */
+  return l.vendedor===SESSION.nome && l.status!=='validado';
+}
+function podeExcluir(l){
+  if(isAdmin()) return true;                     /* admin: exclui qualquer coisa */
+  return l.vendedor===SESSION.nome && l.status==='pendente';
+}
+function editarLanc(id){
+  const l=lancAll().find(x=>x.id===id);
+  if(!l||!podeEditar(l)) return toast('Sem permissão para editar', true);
+  editId=id;
+  showTab('lancar');
+  setTipoLanc(l.tipo);
+  $('fData').value=l.data;
+  if(isSup()) $('lancVendSel').value=l.vendedor;
+  if(l.tipo==='venda'){
+    $('fCliente').value=l.cliente||''; $('fMoto').value=l.moto; $('fVersao').value=l.versao||'';
+    $('fValorMoto').value=l.valorMoto; $('fAcessVenda').value=l.valorAcess||'';
+    pagamentos=JSON.parse(JSON.stringify(l.pagamentos)); renderPagamentos();
+    if(l.doc.status==='feita'){ setDocStatus('feita'); $('fDocValor').value=l.doc.valor; $('fDocDesc').value=l.doc.desconto; $('fDocTabela').value=l.doc.tabelaId; }
+    else{ setDocStatus('perda'); $('fDocMotivo').value=l.doc.motivo; }
+  }else if(l.tipo==='acessorio'){ $('fClienteAcess').value=l.cliente||''; $('fAcessDesc').value=l.descricao||''; $('fAcessValor').value=l.valor; }
+  else $('fSnMoto').value=l.descricao;
+  $('btnSalvar').textContent='💾 Atualizar Lançamento';
+  $('btnCancelEdit').classList.remove('hidden');
+}
+function excluirLanc(id){
+  const l=lancAll().find(x=>x.id===id);
+  if(!l||!podeExcluir(l)) return toast('Sem permissão para excluir', true);
+  if(!confirm('Excluir este lançamento?')) return;
+  queue({file:'lancamentos',op:'delete',id});
+  toast('Excluído');
+  renderTabAtual();
+}
+
+/* ================= LISTA ================= */
+function nomeBanco(id){ const b=(cfg()?.bancos||[]).find(x=>x.id===id); return b?b.nome:'?'; }
+function nomeTabela(id){ const t=(cfg()?.docTabelas||[]).find(x=>x.id===id); return t?t.nome:'?'; }
+function lancHtml(l,acoes){
+  let t1='',t2='';
+  if(l.tipo==='venda'){
+    t1=`${l.cliente?l.cliente+' — ':''}${l.moto}${l.versao?' '+l.versao:''} — ${fmt(l.valorMoto)}`;
+    const pg=l.pagamentos.map(p=>p.tipo==='Financiamento'?`Financ. ${nomeBanco(p.banco)} ${p.retorno||''}`:p.tipo).join(' + ');
+    const doc=l.doc.status==='feita'?`Doc ${nomeTabela(l.doc.tabelaId)} ${fmt((l.doc.valor||0)-(l.doc.desconto||0))}`:`🚫 Doc perdida: ${l.doc.motivo}`;
+    t2=`${l.vendedor} · ${l.data.slice(8,10)}/${l.data.slice(5,7)} · ${pg}${l.valorAcess?` · Acess ${fmt(l.valorAcess)}`:''} · ${doc}`;
+  }else if(l.tipo==='acessorio'){
+    t1=`${l.cliente?l.cliente+' — ':''}${l.descricao||'Acessório'} — ${fmt(l.valor)}`;
+    t2=`${l.vendedor} · ${l.data.slice(8,10)}/${l.data.slice(5,7)}`;
+  }else{
+    t1=l.descricao;
+    t2=`${l.vendedor} · ${l.data.slice(8,10)}/${l.data.slice(5,7)} · Captação seminovo`;
+  }
+  if(l.status==='rejeitado'&&l.motivoRejeicao) t2+=` · ❌ ${l.motivoRejeicao}`;
+  return `<div class="list-item">
+    <span class="badge ${l.status}">${l.status}</span>
+    <div class="info"><div class="t1">${t1}</div><div class="t2">${t2}</div></div>
+    ${acoes||''}
+  </div>`;
+}
+function renderLista(){
+  $('mesLista').textContent=nomeMes(mesAtual);
+  if(isSup()){
+    $('filtroVendWrap').classList.remove('hidden');
+    const sel=$('filtroVend'); const cur=sel.value;
+    sel.innerHTML='<option value="">Todos</option>'+vendedores().map(v=>`<option ${cur===v?'selected':''}>${v}</option>`).join('');
+  }
+  const fv=isSup()?$('filtroVend').value:'';
+  const itens=lancVisiveis().filter(l=>l.mes===mesAtual&&(!fv||l.vendedor===fv)).sort((a,b)=>b.data.localeCompare(a.data));
+  $('listaLanc').innerHTML=itens.length?itens.map(l=>{
+    let acoes='';
+    if(podeEditar(l)) acoes+=`<button class="mini" style="color:var(--blue)" onclick="editarLanc('${l.id}')">✏️</button>`;
+    if(podeExcluir(l)) acoes+=`<button class="mini" onclick="excluirLanc('${l.id}')">🗑️</button>`;
+    return lancHtml(l,acoes);
+  }).join(''):'<p class="muted">Nenhum lançamento neste mês.</p>';
+}
+
+/* ================= VALIDAÇÃO ================= */
+/* Card completo com todos os detalhes da negociação */
+function detalheHtml(l,acoes){
+  const c=cfg()||{};
+  let corpo='';
+  if(l.tipo==='venda'){
+    const totalPag=l.pagamentos.reduce((s,p)=>s+p.valor,0);
+    let pagRows='', comFinTotal=0;
+    l.pagamentos.forEach(p=>{
+      if(p.tipo==='Financiamento'){
+        const f=calcFin(p.valor,p.retorno,l.mes);
+        comFinTotal+=f.comissao;
+        pagRows+=`<tr><td>🏦 Financ. ${nomeBanco(p.banco)} · ${p.retorno||'R0'} (${f.rp}%)</td><td>${fmt(p.valor)}</td></tr>
+          <tr><td class="muted" style="padding-left:18px">Retorno bruto</td><td class="muted">${fmt(f.bruto)}</td></tr>
+          <tr><td class="muted" style="padding-left:18px">− ILA ${f.ila}%</td><td class="muted">${fmt(f.posIla)}</td></tr>
+          <tr><td class="muted" style="padding-left:18px">− Imposto ${impostoFin()}%</td><td class="muted">${fmt(f.liquido)}</td></tr>
+          <tr><td style="padding-left:18px"><b>Comissão vendedor (${pctComVendFin()}%)</b></td><td><b>${fmt(f.comissao)}</b></td></tr>`;
+      }else{
+        pagRows+=`<tr><td>${p.tipo}</td><td>${fmt(p.valor)}</td></tr>`;
+        if(p.tipo==='Cartão'&&p.juros>0)
+          pagRows+=`<tr><td class="muted" style="padding-left:18px">💳 Juros (excedente, fora do valor da moto)</td><td class="muted">${fmt(p.juros)}</td></tr>`;
+      }
+    });
+    const doc=l.doc.status==='feita'
+      ? `<tr><td>Documentação</td><td>${nomeTabela(l.doc.tabelaId)}</td></tr>
+         <tr><td class="muted" style="padding-left:18px">Valor cobrado</td><td class="muted">${fmt(l.doc.valor)}</td></tr>
+         <tr><td class="muted" style="padding-left:18px">Desconto</td><td class="muted">${fmt(l.doc.desconto)}</td></tr>
+         <tr><td class="muted" style="padding-left:18px">Líquido ao cliente</td><td class="muted">${fmt((l.doc.valor||0)-(l.doc.desconto||0))}</td></tr>
+         <tr><td><b>Comissão documentação</b></td><td><b>${fmt(valorDoc(l.doc.tabelaId))}</b></td></tr>`
+      : `<tr><td colspan="2"><span class="chip red">🚫 Documentação perdida — ${l.doc.motivo}</span></td></tr>`;
+    const comMoto=l.valorMoto*(c.pctMoto||0)/100;
+    const comAcess=(l.valorAcess||0)*(c.pctAcess||0)/100;
+    corpo=`<div class="scroll-x"><table>
+      <tr><th>Item</th><th>Valor</th></tr>
+      <tr><td>👤 Cliente</td><td><b>${l.cliente||'—'}</b></td></tr>
+      <tr><td>🏍️ ${l.moto}${l.versao?' · '+l.versao:''}</td><td><b>${fmt(l.valorMoto)}</b></td></tr>
+      <tr><td class="muted" style="padding-left:18px">Comissão moto (${c.pctMoto}%)</td><td class="muted">${fmt(comMoto)}</td></tr>
+      ${pagRows}
+      <tr><td>Total dos pagamentos</td><td class="${Math.abs(totalPag-l.valorMoto)<0.01?'':'warn'}">${fmt(totalPag)}</td></tr>
+      ${l.valorAcess?`<tr><td>🧰 Acessórios na venda</td><td>${fmt(l.valorAcess)}</td></tr>
+      <tr><td class="muted" style="padding-left:18px">Comissão acessórios (${c.pctAcess}%)</td><td class="muted">${fmt(comAcess)}</td></tr>`:''}
+      ${doc}
+      <tr><td><b>Comissão total desta venda</b></td><td><b style="color:var(--accent2)">${fmt(comMoto+comAcess+comFinTotal+(l.doc.status==='feita'?valorDoc(l.doc.tabelaId):0))}</b></td></tr>
+    </table></div>`;
+  }else if(l.tipo==='acessorio'){
+    const com=(l.valor||0)*(c.pctAcess||0)/100;
+    corpo=`<div class="scroll-x"><table>
+      <tr><th>Item</th><th>Valor</th></tr>
+      <tr><td>👤 Cliente</td><td><b>${l.cliente||'—'}</b></td></tr>
+      <tr><td>🧰 ${l.descricao||'Acessório'}</td><td><b>${fmt(l.valor)}</b></td></tr>
+      <tr><td>Comissão (${c.pctAcess}%)</td><td><b>${fmt(com)}</b></td></tr>
+    </table></div>`;
+  }else{
+    corpo=`<div class="scroll-x"><table>
+      <tr><th>Item</th><th>Valor</th></tr>
+      <tr><td>♻️ ${l.descricao}</td><td>—</td></tr>
+      <tr><td>Prêmio de captação</td><td><b>${fmt(c.premioSeminovo)}</b></td></tr>
+    </table></div>`;
+  }
+  return `<div class="card" style="border-left:4px solid var(--accent)">
+    <h2><span class="badge ${l.status}">${l.status}</span> ${l.vendedor} · ${l.data.split('-').reverse().join('/')}</h2>
+    ${corpo}
+    <p class="muted" style="margin-top:8px">Lançado por ${l.criadoPor||l.vendedor}${l.validadoPor?` · Tratado por ${l.validadoPor}`:''}${l.motivoRejeicao?` · ❌ ${l.motivoRejeicao}`:''}</p>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px">${acoes||''}</div>
+  </div>`;
+}
+function renderValidar(){
+  $('mesVal').textContent=nomeMes(mesAtual);
+  const pend=lancAll().filter(l=>l.mes===mesAtual&&l.status==='pendente').sort((a,b)=>a.data.localeCompare(b.data));
+  $('listaPendentes').innerHTML=pend.length?pend.map(l=>detalheHtml(l,
+    `<button class="btn ok sm" onclick="validarLanc('${l.id}',true)">✅ Validar</button>
+     <button class="btn danger sm" onclick="validarLanc('${l.id}',false)">✖ Rejeitar</button>
+     <button class="btn sec sm" onclick="editarLanc('${l.id}')">✏️ Alterar</button>
+     ${isAdmin()?`<button class="btn sec sm" onclick="excluirLanc('${l.id}')">🗑️ Excluir</button>`:''}`
+  )).join(''):'<p class="muted">Nada pendente. 🎉</p>';
+  const jaTratados=lancAll().filter(l=>l.mes===mesAtual&&l.status!=='pendente').sort((a,b)=>b.data.localeCompare(a.data));
+  $('listaRejeitados').innerHTML=jaTratados.length?jaTratados.map(l=>detalheHtml(l,
+    `<button class="btn sec sm" onclick="editarLanc('${l.id}')">✏️ Alterar</button>
+     ${l.status==='rejeitado'?`<button class="btn ok sm" onclick="validarLanc('${l.id}',true)">✅ Validar</button>`:''}
+     ${l.status==='validado'?`<button class="btn danger sm" onclick="validarLanc('${l.id}',false)">✖ Reverter/Rejeitar</button>`:''}
+     ${isAdmin()?`<button class="btn sec sm" onclick="excluirLanc('${l.id}')">🗑️ Excluir</button>`:''}`
+  )).join(''):'<p class="muted">Nenhum lançamento tratado neste mês.</p>';
+}
+function validarLanc(id,ok){
+  const l=lancAll().find(x=>x.id===id); if(!l) return;
+  const novo={...l,updatedAt:Date.now()};
+  if(ok){ novo.status='validado'; novo.validadoPor=SESSION.nome; }
+  else{
+    const motivo=prompt('Motivo da rejeição:'); if(motivo===null) return;
+    if(!motivo.trim()) return toast('Informe o motivo', true);
+    novo.status='rejeitado'; novo.motivoRejeicao=motivo.trim(); novo.validadoPor=SESSION.nome;
+  }
+  queue({file:'lancamentos',op:'upsert',record:novo});
+  toast(ok?'Validado!':'Rejeitado');
+  renderValidar();
+}
+
+/* ================= APURAÇÃO ================= */
+function getDsrMes(){ return (cfg()?.dsrMeses||{})[mesAtual]||{domFer:5,uteis:25}; }
+function salvarDsrMes(){
+  if(!isSup()) return;
+  const c=cfg();
+  c.dsrMeses=c.dsrMeses||{};
+  c.dsrMeses[mesAtual]={domFer:num('dsrDomFer'),uteis:num('dsrUteis')};
+  queue({file:'config',op:'full',data:c});
+  renderApuracao();
+}
+function salvarIlaMes(){
+  if(!isSup()) return;
+  const c=cfg();
+  c.ilaMeses=c.ilaMeses||{};
+  c.ilaMeses[mesAtual]=num('ilaMes');
+  queue({file:'config',op:'full',data:c});
+  renderApuracao();
+}
+function premioFaixa(faixas,qtd){
+  let p=0; (faixas||[]).slice().sort((a,b)=>a.min-b.min).forEach(f=>{ if(qtd>=f.min) p=f.premio; });
+  return p;
+}
+function calcularApuracao(mes){
+  const c=cfg()||{};
+  const dsr=(c.dsrMeses||{})[mes]||{domFer:5,uteis:25};
+  const fator=dsr.uteis>0?dsr.domFer/dsr.uteis:0;
+  const res={};
+  const nomes=isSup()?vendedores():[SESSION.nome];
+  nomes.forEach(v=>{
+    res[v]={valorMotos:0,qtVendas:0,comMotos:0,dsrMotos:0,comFin:0,dsrFin:0,valorAcess:0,comAcess:0,dsrAcess:0,
+            valorFinanciado:0,finBruto:0,finLiquido:0,
+            comDoc:0,qtEmpl:0,qtSN:0,premioQt:0,premioEmpl:0,premioSN:0,docsPerdidas:[],pagFormas:{},total:0};
+  });
+  lancAll().filter(l=>l.mes===mes&&l.status==='validado').forEach(l=>{
+    const r=res[l.vendedor]; if(!r) return;
+    if(l.tipo==='venda'){
+      r.valorMotos+=l.valorMoto; r.qtVendas++; r.valorAcess+=l.valorAcess||0;
+      l.pagamentos.forEach(p=>{
+        const key=p.tipo==='Financiamento'?`Financ. ${nomeBanco(p.banco)} ${p.retorno||'R0'}`:p.tipo;
+        r.pagFormas[key]=(r.pagFormas[key]||0)+p.valor;
+        if(p.tipo==='Financiamento'){
+          const f=calcFin(p.valor,p.retorno,mes);
+          r.valorFinanciado+=p.valor; r.finBruto+=f.bruto; r.finLiquido+=f.liquido;
+          r.comFin+=f.comissao;
+        }
+      });
+      if(l.doc.status==='feita'){
+        r.qtEmpl++;
+        r.comDoc+=valorDoc(l.doc.tabelaId);
+      }else r.docsPerdidas.push({moto:l.moto,motivo:l.doc.motivo,data:l.data});
+    }else if(l.tipo==='acessorio') r.valorAcess+=l.valor;
+    else r.qtSN++;
+  });
+  Object.values(res).forEach(r=>{
+    r.comMotos=r.valorMotos*(c.pctMoto||0)/100;
+    r.dsrMotos=r.comMotos*fator;
+    r.dsrFin=r.comFin*fator;
+    r.comAcess=r.valorAcess*(c.pctAcess||0)/100;
+    r.dsrAcess=r.comAcess*fator;
+    r.premioQt=premioFaixa(c.faixasQt,r.qtVendas);
+    r.premioEmpl=premioFaixa(c.faixasEmpl,r.qtEmpl);
+    r.premioSN=r.qtSN*(c.premioSeminovo||0);
+    r.total=r.comMotos+r.dsrMotos+r.comFin+r.dsrFin+r.comAcess+r.dsrAcess+r.comDoc+r.premioQt+r.premioEmpl+r.premioSN;
+  });
+  return res;
+}
+/* Comissão total gerada por UM lançamento (sem prêmios mensais) */
+function comissaoLanc(l){
+  const c=cfg()||{};
+  const dsr=(c.dsrMeses||{})[l.mes]||{domFer:5,uteis:25};
+  const fator=dsr.uteis>0?dsr.domFer/dsr.uteis:0;
+  if(l.tipo==='seminovo') return c.premioSeminovo||0;
+  if(l.tipo==='acessorio'){
+    const ca=(l.valor||0)*(c.pctAcess||0)/100;
+    return ca+ca*fator;
+  }
+  const cm=(l.valorMoto||0)*(c.pctMoto||0)/100;
+  const ca=(l.valorAcess||0)*(c.pctAcess||0)/100;
+  let cf=0;
+  (l.pagamentos||[]).forEach(p=>{ if(p.tipo==='Financiamento') cf+=calcFin(p.valor,p.retorno,l.mes).comissao; });
+  const cd=(l.doc&&l.doc.status==='feita')?valorDoc(l.doc.tabelaId):0;
+  return cm+cm*fator + ca+ca*fator + cf+cf*fator + cd;
+}
+/* Visão do vendedor: apenas cliente + comissão de cada venda e o total */
+function renderApuracaoVendedor(){
+  $('mesApu').textContent=nomeMes(mesAtual);
+  $('dsrCard').classList.add('hidden');
+  $('exportCard').classList.add('hidden');
+  const meus=lancAll().filter(l=>l.mes===mesAtual&&l.status==='validado'&&l.vendedor===SESSION.nome)
+    .sort((a,b)=>a.data.localeCompare(b.data));
+  const res=calcularApuracao(mesAtual);
+  const r=res[SESSION.nome]||{total:0,premioQt:0,premioEmpl:0};
+  let linhas=meus.map(l=>{
+    const rot=l.tipo==='venda'?`Venda · ${l.cliente||'Cliente'}`
+             :l.tipo==='acessorio'?`Acessório · ${l.cliente||'Cliente'}`
+             :`Captação seminovo · ${l.descricao||''}`;
+    return `<div class="total-line"><span>${rot}</span><b>${fmt(comissaoLanc(l))}</b></div>`;
+  }).join('');
+  const premios=(r.premioQt||0)+(r.premioEmpl||0);
+  if(premios>0) linhas+=`<div class="total-line"><span>Prêmios do mês</span><b>${fmt(premios)}</b></div>`;
+  const pend=lancAll().filter(l=>l.mes===mesAtual&&l.status==='pendente'&&l.vendedor===SESSION.nome).length;
+  $('apuResultado').innerHTML=`<div class="card">
+    <h2>💰 Meu comissionamento — ${nomeMes(mesAtual)}</h2>
+    ${linhas||'<p class="muted">Nenhuma venda validada neste mês.</p>'}
+    <div class="total-line big"><span>Comissionamento total</span><span>${fmt(r.total)}</span></div>
+    ${pend?`<p class="muted" style="margin-top:8px">⏳ ${pend} lançamento(s) aguardando validação — ainda não contabilizados.</p>`:''}
+  </div>`;
+}
+function renderApuracao(){
+  if(!isSup()) return renderApuracaoVendedor();
+  $('dsrCard').classList.remove('hidden');
+  $('mesApu').textContent=nomeMes(mesAtual);
+  const dsr=getDsrMes();
+  $('dsrDomFer').value=dsr.domFer; $('dsrUteis').value=dsr.uteis;
+  $('ilaMes').value=ilaDoMes(mesAtual);
+  $('infoImposto').textContent=impostoFin();
+  $('infoComFin').textContent=pctComVendFin();
+  $('dsrDomFer').disabled=$('dsrUteis').disabled=$('ilaMes').disabled=!isSup();
+  $('exportCard').classList.toggle('hidden',!isSup());
+  const res=calcularApuracao(mesAtual);
+  const c=cfg()||{};
+  let html='', geral=0;
+  Object.entries(res).forEach(([v,r])=>{
+    geral+=r.total;
+    if(r.qtVendas===0&&r.valorAcess===0&&r.qtSN===0) return;
+    html+=`<div class="card">
+      <h2>👤 ${v}</h2>
+      <div class="total-line"><span>Vendas de motos (${r.qtVendas})</span><b>${fmt(r.valorMotos)}</b></div>
+      <div class="total-line"><span>Comissão motos (${c.pctMoto}%)</span><span>${fmt(r.comMotos)}</span></div>
+      <div class="total-line"><span>DSR motos</span><span>${fmt(r.dsrMotos)}</span></div>
+      <div class="total-line"><span>Valor financiado (${fmt(r.valorFinanciado)})</span><span class="muted">bruto ${fmt(r.finBruto)} · líq. ${fmt(r.finLiquido)}</span></div>
+      <div class="total-line"><span>Comissão financiamentos (${pctComVendFin()}% do líquido)</span><span>${fmt(r.comFin)}</span></div>
+      <div class="total-line"><span>DSR financiamentos</span><span>${fmt(r.dsrFin)}</span></div>
+      <div class="total-line"><span>Acessórios vendidos</span><span>${fmt(r.valorAcess)}</span></div>
+      <div class="total-line"><span>Comissão acessórios (${c.pctAcess}%)</span><span>${fmt(r.comAcess)}</span></div>
+      <div class="total-line"><span>DSR acessórios</span><span>${fmt(r.dsrAcess)}</span></div>
+      <div class="total-line"><span>Comissão documentação (${r.qtEmpl})</span><span>${fmt(r.comDoc)}</span></div>
+      <div class="total-line"><span>Prêmio qt. vendas</span><span>${fmt(r.premioQt)}</span></div>
+      <div class="total-line"><span>Prêmio emplacamento</span><span>${fmt(r.premioEmpl)}</span></div>
+      <div class="total-line"><span>Prêmio seminovos (${r.qtSN})</span><span>${fmt(r.premioSN)}</span></div>
+      <div class="total-line big"><span>TOTAL</span><span>${fmt(r.total)}</span></div>
+      ${Object.keys(r.pagFormas).length?`<h3>Formas de pagamento</h3>`+Object.entries(r.pagFormas).map(([k,v2])=>`<span class="chip blue">${k}: ${fmt(v2)}</span>`).join(''):''}
+      ${r.docsPerdidas.length?`<h3 style="color:#c0392b">Docs perdidas (${r.docsPerdidas.length})</h3>`+r.docsPerdidas.map(d=>`<span class="chip red">${d.moto}: ${d.motivo}</span>`).join(''):''}
+    </div>`;
+  });
+  const cab=isSup()?`<div class="card"><h2>💰 Total geral do mês: ${fmt(geral)}</h2></div>`:'';
+  $('apuResultado').innerHTML=cab+(html||'<div class="card"><p class="muted">Sem lançamentos validados neste mês.</p></div>');
+}
+function exportarExcel(){
+  const res=calcularApuracao(mesAtual);
+  const rows=[['Vendedor','Valor de Venda Motos','Comissão Motos','DSR Motos','Valor Financiado','Retorno Bruto','Retorno Líquido','Comissão Financiamentos','DSR Financiamentos','Comissão Acess.','DSR Acess.','Comissão Doc.','Prêmio Qt Vendas','Prêmio Emplacamento','Prêmio Moto SN','TOTAL']];
+  Object.entries(res).forEach(([v,r])=>{
+    rows.push([v,r.valorMotos,r.comMotos,r.dsrMotos,r.valorFinanciado,r.finBruto,r.finLiquido,r.comFin,r.dsrFin,r.comAcess,r.dsrAcess,r.comDoc,r.premioQt,r.premioEmpl,r.premioSN,r.total]);
+  });
+  rows.push([]);
+  rows.push(['Parâmetros do mês:','ILA %',ilaDoMes(mesAtual),'Imposto %',impostoFin(),'Comissão vend. financ. %',pctComVendFin()]);
+  rows.push([]); rows.push(['DOCUMENTAÇÕES PERDIDAS']); rows.push(['Vendedor','Data','Moto','Motivo']);
+  Object.entries(res).forEach(([v,r])=>r.docsPerdidas.forEach(d=>rows.push([v,d.data,d.moto,d.motivo])));
+  rows.push([]); rows.push(['LANÇAMENTOS VALIDADOS DO MÊS']);
+  rows.push(['Data','Vendedor','Cliente','Tipo','Descrição','Versão','Valor','Pagamentos','Documentação','Validado por']);
+  lancAll().filter(l=>l.mes===mesAtual&&l.status==='validado').sort((a,b)=>a.data.localeCompare(b.data)).forEach(l=>{
+    if(l.tipo==='venda'){
+      rows.push([l.data,l.vendedor,l.cliente||'','Venda Moto',l.moto,l.versao||'',l.valorMoto,
+        l.pagamentos.map(p=>`${p.tipo==='Financiamento'?'Financ. '+nomeBanco(p.banco)+' '+(p.retorno||''):p.tipo}: ${p.valor}`).join(' | '),
+        l.doc.status==='feita'?`${nomeTabela(l.doc.tabelaId)} · cobrado R$${((l.doc.valor||0)-(l.doc.desconto||0)).toFixed(2)} · comissão R$${valorDoc(l.doc.tabelaId).toFixed(2)}`:`PERDIDA: ${l.doc.motivo}`, l.validadoPor||'']);
+    }else if(l.tipo==='acessorio') rows.push([l.data,l.vendedor,l.cliente||'','Acessório',l.descricao||'','',l.valor,'','',l.validadoPor||'']);
+    else rows.push([l.data,l.vendedor,'','Captação SN',l.descricao,'',(cfg()?.premioSeminovo)||0,'','',l.validadoPor||'']);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=rows[0].map(()=>({wch:18}));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Apuração');
+  XLSX.writeFile(wb,`Apuracao_${mesAtual}.xlsx`);
+}
+
+/* ================= ADMIN ================= */
+function renderAdmin(){
+  if(!isAdmin()) return;
+  const c=cfg(); if(!c){ $('adminArea').innerHTML='<div class="card"><p class="muted">Sem dados. Sincronize primeiro.</p></div>'; return; }
+  $('adminArea').innerHTML=`
+  <div class="card"><h2>👥 Usuários</h2><div id="admUsers"></div>
+    <h3>Novo usuário</h3>
+    <div class="admin-row">
+      <input id="nuNome" placeholder="Nome">
+      <input id="nuEmail" placeholder="E-mail" type="email">
+    </div>
+    <div class="admin-row">
+      <select id="nuRole"><option value="vendedor">Vendedor</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select>
+      <input id="nuSenha" placeholder="Senha inicial">
+      <button class="btn sm" onclick="admAddUser()">＋</button>
+    </div></div>
+  <div class="card"><h2>🏍️ Modelos de Moto</h2><div id="admMotos"></div>
+    <div class="admin-row"><input id="novaMoto" placeholder="Modelo"><button class="btn sm" onclick="admAddStr('motos','novaMoto')">＋</button></div>
+    <h3>Versões</h3>
+    <p class="muted">Lista que aparece abaixo do modelo no lançamento</p>
+    <div id="admVersoes"></div>
+    <div class="admin-row"><input id="novaVersao" placeholder="Versão (ex.: Standard, Dual Tone)"><button class="btn sm" onclick="admAddStr('versoes','novaVersao')">＋</button></div></div>
+  <div class="card"><h2>🏦 Bancos de Financiamento</h2><div id="admBancos"></div>
+    <div class="admin-row"><input id="novoBanco" placeholder="Nome do banco"><button class="btn sm" onclick="admAddBanco()">＋</button></div>
+    <h3>Retornos (R0–R5)</h3>
+    <p class="muted">% de retorno sobre o valor financiado (cada R = 1,2%)</p>
+    <div id="admRetornos"></div>
+    <h3>Cadeia de cálculo do financiamento</h3>
+    <p class="muted">Retorno bruto → −ILA% → −imposto% → comissão do vendedor % sobre o líquido</p>
+    <label>ILA padrão (%) — usado quando o mês não tiver lançamento próprio</label>
+    <input type="number" step="0.01" value="${c.ilaPadrao!==undefined?c.ilaPadrao:26.05}" onchange="admSet('ilaPadrao',this.value)">
+    <label>Imposto (%)</label>
+    <input type="number" step="0.01" value="${c.impostoFin!==undefined?c.impostoFin:14.25}" onchange="admSet('impostoFin',this.value)">
+    <label>Comissão do vendedor sobre o líquido (%)</label>
+    <input type="number" step="0.01" value="${c.pctComissaoVendFin!==undefined?c.pctComissaoVendFin:10}" onchange="admSet('pctComissaoVendFin',this.value)"></div>
+  <div class="card"><h2>📄 Tabelas de Documentação</h2>
+    <p class="muted">Valor fixo de comissão por documentação feita</p><div id="admDocs"></div></div>
+  <div class="card"><h2>💵 Percentuais e Prêmios</h2>
+    <label>Comissão motos (%)</label><input type="number" step="0.01" value="${c.pctMoto}" onchange="admSet('pctMoto',this.value)">
+    <label>Comissão acessórios (%)</label><input type="number" step="0.01" value="${c.pctAcess}" onchange="admSet('pctAcess',this.value)">
+    <label>Prêmio por captação de seminovo (R$)</label><input type="number" step="0.01" value="${c.premioSeminovo}" onchange="admSet('premioSeminovo',this.value)">
+    <h3>Prêmio Quantidade de Vendas</h3><div id="admFaixasQt"></div>
+    <div class="admin-row"><input id="fqMin" class="narrow" type="number" placeholder="Qt mín."><input id="fqPremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasQt','fqMin','fqPremio')">＋</button></div>
+    <h3>Prêmio Emplacamento</h3><div id="admFaixasEmpl"></div>
+    <div class="admin-row"><input id="feMin" class="narrow" type="number" placeholder="Qt mín."><input id="fePremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasEmpl','feMin','fePremio')">＋</button></div></div>
+  <div class="card"><h2>💳 Excedente — Juros de Cartão</h2>
+    <p class="muted">Consulta exclusiva do administrador. Estes valores não entram no valor da moto nem na comissão.</p>
+    <label>Mês de referência</label>
+    <input type="month" id="jurosMes" value="${mesAtual}" onchange="renderJuros()">
+    <div id="jurosResultado" style="margin-top:12px"></div></div>
+  <div class="card"><h2>🗑️ Zona de perigo</h2>
+    <button class="btn danger" onclick="admLimparMes()">Apagar lançamentos de ${nomeMes(mesAtual)}</button></div>`;
+  admRenderListas();
+  renderJuros();
+}
+/* Consulta exclusiva do admin: excedente de juros de cartão */
+function renderJuros(){
+  if(!isAdmin()||!$('jurosMes')) return;
+  const mes=$('jurosMes').value||mesAtual;
+  const itens=lancAll().filter(l=>l.mes===mes&&l.tipo==='venda'&&jurosLanc(l)>0)
+    .sort((a,b)=>a.data.localeCompare(b.data));
+  const total=itens.reduce((s,l)=>s+jurosLanc(l),0);
+  const porVend={};
+  itens.forEach(l=>{ porVend[l.vendedor]=(porVend[l.vendedor]||0)+jurosLanc(l); });
+  $('jurosResultado').innerHTML=`
+    <div class="bigkpi"><div class="k"><div class="v">${fmt(total)}</div>
+      <div class="l">Valor Excedente juros cartão — ${nomeMes(mes)}</div></div></div>
+    ${itens.length?`<div class="scroll-x"><table>
+      <tr><th>Data</th><th>Cliente</th><th>Vendedor</th><th>Status</th><th>Juros</th></tr>
+      ${itens.map(l=>`<tr><td>${l.data.split('-').reverse().join('/')}</td><td>${l.cliente||'—'}</td><td>${l.vendedor}</td><td>${l.status}</td><td>${fmt(jurosLanc(l))}</td></tr>`).join('')}
+      <tr><td colspan="4"><b>TOTAL</b></td><td><b>${fmt(total)}</b></td></tr>
+    </table></div>
+    <h3>Por vendedor</h3>
+    ${Object.entries(porVend).sort((a,b)=>b[1]-a[1]).map(([v,t])=>`<span class="chip blue">${v}: ${fmt(t)}</span>`).join('')}
+    <button class="btn sec" onclick="exportarJuros()">📊 Exportar esta consulta</button>`
+    :'<p class="muted">Nenhum juros de cartão lançado neste mês.</p>'}`;
+}
+function exportarJuros(){
+  const mes=$('jurosMes').value||mesAtual;
+  const itens=lancAll().filter(l=>l.mes===mes&&l.tipo==='venda'&&jurosLanc(l)>0).sort((a,b)=>a.data.localeCompare(b.data));
+  const rows=[['EXCEDENTE — JUROS DE CARTÃO — '+nomeMes(mes)],[],
+              ['Data','Cliente','Vendedor','Moto','Versão','Valor da moto','Status','Juros (excedente)']];
+  itens.forEach(l=>rows.push([l.data,l.cliente||'',l.vendedor,l.moto||'',l.versao||'',l.valorMoto||0,l.status,jurosLanc(l)]));
+  rows.push([]);
+  rows.push(['','','','','','','TOTAL',itens.reduce((s,l)=>s+jurosLanc(l),0)]);
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=rows[2].map(()=>({wch:18}));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Juros cartão');
+  XLSX.writeFile(wb,`Juros_Cartao_${mes}.xlsx`);
+}
+function admRenderListas(){
+  const c=cfg();
+  $('admUsers').innerHTML=usuarios().map((u,i)=>`
+    <div class="admin-row">
+      <input value="${u.nome}" onchange="admEditUser(${i},'nome',this.value)">
+      <input value="${u.email}" onchange="admEditUser(${i},'email',this.value)">
+      <select onchange="admEditUser(${i},'role',this.value)">
+        ${['vendedor','supervisor','admin'].map(r=>`<option ${u.role===r?'selected':''}>${r}</option>`).join('')}
+      </select>
+      <button class="btn sec sm" onclick="admResetSenha(${i})">🔑</button>
+      <button class="btn sec sm" onclick="admToggleAtivo(${i})">${u.ativo!==false?'🟢':'⚫'}</button>
+    </div>`).join('');
+  $('admMotos').innerHTML=(c.motos||[]).map((m,i)=>`<div class="admin-row"><input value="${m}" onchange="admEditStr('motos',${i},this.value)"><button class="mini" onclick="admRmStr('motos',${i})">🗑️</button></div>`).join('');
+  $('admVersoes').innerHTML=(c.versoes||[]).map((v,i)=>`<div class="admin-row"><input value="${v}" onchange="admEditStr('versoes',${i},this.value)"><button class="mini" onclick="admRmStr('versoes',${i})">🗑️</button></div>`).join('');
+  $('admBancos').innerHTML=(c.bancos||[]).map((b,i)=>`<div class="admin-row"><input value="${b.nome}" onchange="admEditBanco(${i},'nome',this.value)"><button class="mini" onclick="admRmStr('bancos',${i})">🗑️</button></div>`).join('');
+  $('admRetornos').innerHTML=Object.entries(retornos()).map(([r,pc])=>`<div class="admin-row"><span class="muted" style="width:36px">${r}</span><input class="narrow" type="number" step="0.1" value="${pc}" onchange="admEditRetorno('${r}',this.value)"><span class="muted">%</span></div>`).join('');
+  $('admDocs').innerHTML=(c.docTabelas||[]).map((t,i)=>`<div class="admin-row"><input value="${t.nome}" onchange="admEditDoc(${i},'nome',this.value)"><span class="muted">R$</span><input class="narrow" type="number" step="0.01" value="${t.valor!==undefined?t.valor:0}" onchange="admEditDoc(${i},'valor',this.value)"></div>`).join('');
+  $('admFaixasQt').innerHTML=(c.faixasQt||[]).map((f,i)=>`<div class="admin-row"><span class="muted">≥</span><input class="narrow" type="number" value="${f.min}" onchange="admEditFaixa('faixasQt',${i},'min',this.value)"><span class="muted">vendas →</span><input type="number" value="${f.premio}" onchange="admEditFaixa('faixasQt',${i},'premio',this.value)"><button class="mini" onclick="admRmStr('faixasQt',${i})">🗑️</button></div>`).join('');
+  $('admFaixasEmpl').innerHTML=(c.faixasEmpl||[]).map((f,i)=>`<div class="admin-row"><span class="muted">≥</span><input class="narrow" type="number" value="${f.min}" onchange="admEditFaixa('faixasEmpl',${i},'min',this.value)"><span class="muted">docs →</span><input type="number" value="${f.premio}" onchange="admEditFaixa('faixasEmpl',${i},'premio',this.value)"><button class="mini" onclick="admRmStr('faixasEmpl',${i})">🗑️</button></div>`).join('');
+}
+function saveConfig(){ queue({file:'config',op:'full',data:cfg()}); }
+function saveUsuarios(){ queue({file:'usuarios',op:'full',data:usuarios()}); }
+async function admAddUser(){
+  const nome=$('nuNome').value.trim().toUpperCase(), email=$('nuEmail').value.trim().toLowerCase(),
+        role=$('nuRole').value, senha=$('nuSenha').value;
+  if(!nome||!email||senha.length<6) return toast('Preencha nome, e-mail e senha (mín. 6)', true);
+  if(usuarios().some(u=>u.email.toLowerCase()===email)) return toast('E-mail já cadastrado', true);
+  usuarios().push({id:uid(),email,nome,senhaHash:await sha256(senha),role,ativo:true});
+  saveUsuarios(); renderAdmin(); toast('Usuário criado!');
+}
+function admEditUser(i,campo,v){
+  const u=usuarios()[i];
+  u[campo]=campo==='nome'?v.toUpperCase():campo==='email'?v.toLowerCase():v;
+  saveUsuarios();
+}
+async function admResetSenha(i){
+  const nova=prompt('Nova senha para '+usuarios()[i].nome+':'); if(nova===null) return;
+  if(nova.length<6) return toast('Senha muito curta', true);
+  usuarios()[i].senhaHash=await sha256(nova);
+  saveUsuarios(); toast('Senha redefinida!');
+}
+function admToggleAtivo(i){
+  usuarios()[i].ativo=usuarios()[i].ativo===false;
+  saveUsuarios(); admRenderListas();
+}
+function admAddStr(lista,inputId){
+  const v=$(inputId).value.trim(); if(!v) return;
+  const c=cfg(); c[lista]=c[lista]||[];
+  c[lista].push(v); $(inputId).value='';
+  saveConfig(); admRenderListas(); renderFormBasics();
+}
+function admEditStr(lista,i,v){ cfg()[lista][i]=v; saveConfig(); renderFormBasics(); }
+function admRmStr(lista,i){ cfg()[lista].splice(i,1); saveConfig(); admRenderListas(); renderFormBasics(); }
+function admAddBanco(){
+  const n=$('novoBanco').value.trim();
+  if(!n) return;
+  cfg().bancos.push({id:uid(),nome:n.toUpperCase()});
+  $('novoBanco').value='';
+  saveConfig(); admRenderListas();
+}
+function admEditBanco(i,campo,v){ cfg().bancos[i][campo]=v.toUpperCase(); saveConfig(); }
+function admEditRetorno(r,v){ const c=cfg(); c.retornos=retornos(); c.retornos[r]=parseFloat(v)||0; saveConfig(); }
+function admEditDoc(i,campo,v){ cfg().docTabelas[i][campo]=campo==='valor'?(parseFloat(v)||0):v; saveConfig(); renderFormBasics(); }
+function admAddFaixa(lista,idMin,idPremio){
+  const min=parseFloat($(idMin).value)||0, premio=parseFloat($(idPremio).value)||0;
+  if(min<=0) return;
+  cfg()[lista].push({min,premio});
+  $(idMin).value=''; $(idPremio).value='';
+  saveConfig(); admRenderListas();
+}
+function admEditFaixa(lista,i,campo,v){ cfg()[lista][i][campo]=parseFloat(v)||0; saveConfig(); }
+function admSet(campo,v){ cfg()[campo]=parseFloat(v)||0; saveConfig(); renderFormBasics(); }
+function admLimparMes(){
+  if(!confirm(`Apagar TODOS os lançamentos de ${nomeMes(mesAtual)}?`)) return;
+  lancAll().filter(l=>l.mes===mesAtual).forEach(l=>queue({file:'lancamentos',op:'delete',id:l.id}));
+  toast('Lançamentos do mês apagados');
+}
+
+/* ================= INIT ================= */
+function init(){
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  if(!GH){ show('scrSetup'); return; }
+  if(!SESSION){ show('scrLogin'); return; }
+  entrarApp();
+}
+init();
+</script>
+</body>
+</html>
