@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#123a7a">
-<title>Vendas Motos</title>
+<title>Lançamento de Vendas Royal</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -129,7 +129,7 @@ a{color:var(--blue)}
 <!-- ============ LOGIN ============ -->
 <div id="scrLogin" class="login-wrap hidden">
   <div class="logo">🏍️</div>
-  <h1>Vendas Motos</h1>
+  <h1>Lançamento de Vendas Royal</h1>
   <div class="card">
     <label>E-mail</label>
     <input id="loginEmail" type="email" inputmode="email" autocomplete="username">
@@ -144,7 +144,7 @@ a{color:var(--blue)}
 <!-- ============ APP ============ -->
 <div id="scrApp" class="hidden">
 <header>
-  <h1>🏍️ Vendas</h1>
+  <h1>🏍️ Vendas Royal</h1>
   <div class="hright">
     <span id="syncDot" class="dot off" title="status"></span>
     <span id="userNome"></span>
@@ -191,8 +191,6 @@ a{color:var(--blue)}
         <input type="text" id="fCliente" placeholder="Nome completo do cliente">
         <label>Moto vendida</label>
         <select id="fMoto"></select>
-        <label>Versão</label>
-        <select id="fVersao"></select>
         <label>Valor total da moto (R$)</label>
         <input type="number" id="fValorMoto" step="0.01" inputmode="decimal" placeholder="0,00" oninput="pagStatus()">
         <h3>Pagamentos</h3>
@@ -675,7 +673,6 @@ function salvarMetas(){
 function renderFormBasics(){
   const c=cfg()||{motos:[],docTabelas:[],premioSeminovo:0};
   $('fMoto').innerHTML=(c.motos||[]).map(m=>`<option>${m}</option>`).join('');
-  $('fVersao').innerHTML='<option value="">—</option>'+(c.versoes||[]).map(v=>`<option>${v}</option>`).join('');
   $('fDocTabela').innerHTML=(c.docTabelas||[]).map(t=>`<option value="${t.id}">${t.nome}</option>`).join('');
   $('snPremioInfo').textContent=fmt(c.premioSeminovo);
   $('fData').value=new Date().toISOString().slice(0,10);
@@ -699,11 +696,13 @@ function setDocStatus(d){
   $('docFeita').classList.toggle('hidden',d!=='feita');
   $('docPerda').classList.toggle('hidden',d!=='perda');
 }
-function addPagamento(){ pagamentos.push({tipo:'À Vista',banco:'',retorno:'R0',valor:0}); renderPagamentos(); }
+function addPagamento(){ pagamentos.push({tipo:'À Vista',banco:'',retorno:'R0',valor:0,juros:0}); renderPagamentos(); }
+function jurosLanc(l){ return (l.pagamentos||[]).reduce((s,p)=>s+(p.tipo==='Cartão'?(p.juros||0):0),0); }
 function rmPagamento(i){ pagamentos.splice(i,1); renderPagamentos(); }
 function updPag(i,campo,val){
-  pagamentos[i][campo]= campo==='valor'?(parseFloat(val)||0):val;
+  pagamentos[i][campo]= (campo==='valor'||campo==='juros')?(parseFloat(val)||0):val;
   if(campo==='tipo'&&val!=='Financiamento') pagamentos[i].banco='';
+  if(campo==='tipo'&&val!=='Cartão') pagamentos[i].juros=0;
   if(campo==='tipo') renderPagamentos(); else pagStatus();
 }
 function renderPagamentos(){
@@ -725,6 +724,8 @@ function renderPagamentos(){
         </select></div>`:''}
       <div><label>Valor (R$)</label>
         <input type="number" step="0.01" inputmode="decimal" value="${p.valor||''}" onchange="updPag(${i},'valor',this.value)"></div>
+      ${p.tipo==='Cartão'?`<div><label>Juros (R$)</label>
+        <input type="number" step="0.01" inputmode="decimal" value="${p.juros||''}" placeholder="0,00" onchange="updPag(${i},'juros',this.value)"></div>`:''}
       <button class="mini" onclick="rmPagamento(${i})">🗑️</button>
     </div>`).join('');
   pagStatus();
@@ -735,9 +736,11 @@ function pagStatus(){
   const vm=num('fValorMoto');
   if(!pagamentos.length){ el.innerHTML='<p class="muted">Nenhum pagamento adicionado.</p>'; return; }
   const dif=vm-tot;
-  el.innerHTML= Math.abs(dif)<0.01
+  const juros=pagamentos.reduce((s,p)=>s+(p.tipo==='Cartão'?(p.juros||0):0),0);
+  el.innerHTML= (Math.abs(dif)<0.01
     ? `<p class="ok-text">✅ Pagamentos somam ${fmt(tot)} — confere.</p>`
-    : `<p class="warn">⚠️ Pagamentos somam ${fmt(tot)} — ${dif>0?'faltam':'excedem'} ${fmt(Math.abs(dif))}.</p>`;
+    : `<p class="warn">⚠️ Pagamentos somam ${fmt(tot)} — ${dif>0?'faltam':'excedem'} ${fmt(Math.abs(dif))}.</p>`)
+    + (juros>0?`<p class="muted">💳 Juros de cartão: ${fmt(juros)} — lançado como excedente, fora do valor da moto.</p>`:'');
 }
 function salvarLancamento(){
   const data=$('fData').value||new Date().toISOString().slice(0,10);
@@ -756,7 +759,7 @@ function salvarLancamento(){
     const tot=pagamentos.reduce((s,p)=>s+p.valor,0);
     if(Math.abs(tot-vm)>=0.01) return toast('Pagamentos não conferem com o valor da moto', true);
     if(pagamentos.some(p=>p.tipo==='Financiamento'&&!p.banco)) return toast('Selecione o banco do financiamento', true);
-    l.cliente=cli; l.moto=$('fMoto').value; l.versao=$('fVersao').value; l.valorMoto=vm;
+    l.cliente=cli; l.moto=$('fMoto').value; l.valorMoto=vm;
     l.pagamentos=JSON.parse(JSON.stringify(pagamentos));
     l.valorAcess=num('fAcessVenda');
     if(docStatusSel==='feita'){
@@ -787,7 +790,6 @@ function limparForm(){
   $('btnCancelEdit').classList.add('hidden');
   $('btnSalvar').textContent='💾 Salvar Lançamento';
   ['fValorMoto','fAcessVenda','fDocValor','fDocMotivo','fAcessDesc','fAcessValor','fSnMoto','fCliente','fClienteAcess'].forEach(id=>$(id).value='');
-  $('fVersao').value='';
   $('fDocDesc').value='0';
   $('fData').value=new Date().toISOString().slice(0,10);
   setDocStatus('feita');
@@ -812,7 +814,7 @@ function editarLanc(id){
   $('fData').value=l.data;
   if(isSup()) $('lancVendSel').value=l.vendedor;
   if(l.tipo==='venda'){
-    $('fCliente').value=l.cliente||''; $('fMoto').value=l.moto; $('fVersao').value=l.versao||'';
+    $('fCliente').value=l.cliente||''; $('fMoto').value=l.moto;
     $('fValorMoto').value=l.valorMoto; $('fAcessVenda').value=l.valorAcess||'';
     pagamentos=JSON.parse(JSON.stringify(l.pagamentos)); renderPagamentos();
     if(l.doc.status==='feita'){ setDocStatus('feita'); $('fDocValor').value=l.doc.valor; $('fDocDesc').value=l.doc.desconto; $('fDocTabela').value=l.doc.tabelaId; }
@@ -891,6 +893,8 @@ function detalheHtml(l,acoes){
           <tr><td style="padding-left:18px"><b>Comissão vendedor (${pctComVendFin()}%)</b></td><td><b>${fmt(f.comissao)}</b></td></tr>`;
       }else{
         pagRows+=`<tr><td>${p.tipo}</td><td>${fmt(p.valor)}</td></tr>`;
+        if(p.tipo==='Cartão'&&p.juros>0)
+          pagRows+=`<tr><td class="muted" style="padding-left:18px">💳 Juros (excedente, fora do valor da moto)</td><td class="muted">${fmt(p.juros)}</td></tr>`;
       }
     });
     const doc=l.doc.status==='feita'
@@ -1126,14 +1130,14 @@ function exportarExcel(){
   rows.push([]); rows.push(['DOCUMENTAÇÕES PERDIDAS']); rows.push(['Vendedor','Data','Moto','Motivo']);
   Object.entries(res).forEach(([v,r])=>r.docsPerdidas.forEach(d=>rows.push([v,d.data,d.moto,d.motivo])));
   rows.push([]); rows.push(['LANÇAMENTOS VALIDADOS DO MÊS']);
-  rows.push(['Data','Vendedor','Cliente','Tipo','Descrição','Versão','Valor','Pagamentos','Documentação','Validado por']);
+  rows.push(['Data','Vendedor','Cliente','Tipo','Moto / Descrição','Valor','Pagamentos','Documentação','Validado por']);
   lancAll().filter(l=>l.mes===mesAtual&&l.status==='validado').sort((a,b)=>a.data.localeCompare(b.data)).forEach(l=>{
     if(l.tipo==='venda'){
-      rows.push([l.data,l.vendedor,l.cliente||'','Venda Moto',l.moto,l.versao||'',l.valorMoto,
+      rows.push([l.data,l.vendedor,l.cliente||'','Venda Moto',l.moto,l.valorMoto,
         l.pagamentos.map(p=>`${p.tipo==='Financiamento'?'Financ. '+nomeBanco(p.banco)+' '+(p.retorno||''):p.tipo}: ${p.valor}`).join(' | '),
         l.doc.status==='feita'?`${nomeTabela(l.doc.tabelaId)} · cobrado R$${((l.doc.valor||0)-(l.doc.desconto||0)).toFixed(2)} · comissão R$${valorDoc(l.doc.tabelaId).toFixed(2)}`:`PERDIDA: ${l.doc.motivo}`, l.validadoPor||'']);
-    }else if(l.tipo==='acessorio') rows.push([l.data,l.vendedor,l.cliente||'','Acessório',l.descricao||'','',l.valor,'','',l.validadoPor||'']);
-    else rows.push([l.data,l.vendedor,'','Captação SN',l.descricao,'',(cfg()?.premioSeminovo)||0,'','',l.validadoPor||'']);
+    }else if(l.tipo==='acessorio') rows.push([l.data,l.vendedor,l.cliente||'','Acessório',l.descricao||'',l.valor,'','',l.validadoPor||'']);
+    else rows.push([l.data,l.vendedor,'','Captação SN',l.descricao,(cfg()?.premioSeminovo)||0,'','',l.validadoPor||'']);
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=rows[0].map(()=>({wch:18}));
@@ -1159,11 +1163,8 @@ function renderAdmin(){
       <button class="btn sm" onclick="admAddUser()">＋</button>
     </div></div>
   <div class="card"><h2>🏍️ Modelos de Moto</h2><div id="admMotos"></div>
-    <div class="admin-row"><input id="novaMoto" placeholder="Modelo"><button class="btn sm" onclick="admAddStr('motos','novaMoto')">＋</button></div>
-    <h3>Versões</h3>
-    <p class="muted">Lista que aparece abaixo do modelo no lançamento</p>
-    <div id="admVersoes"></div>
-    <div class="admin-row"><input id="novaVersao" placeholder="Versão (ex.: Standard, Dual Tone)"><button class="btn sm" onclick="admAddStr('versoes','novaVersao')">＋</button></div></div>
+    <p class="muted">Cadastre modelo + versão numa linha só (ex.: HUNTER 350 REBEL BLACK)</p>
+    <div class="admin-row"><input id="novaMoto" placeholder="Modelo e versão"><button class="btn sm" onclick="admAddStr('motos','novaMoto')">＋</button></div></div>
   <div class="card"><h2>🏦 Bancos de Financiamento</h2><div id="admBancos"></div>
     <div class="admin-row"><input id="novoBanco" placeholder="Nome do banco"><button class="btn sm" onclick="admAddBanco()">＋</button></div>
     <h3>Retornos (R0–R5)</h3>
@@ -1187,9 +1188,51 @@ function renderAdmin(){
     <div class="admin-row"><input id="fqMin" class="narrow" type="number" placeholder="Qt mín."><input id="fqPremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasQt','fqMin','fqPremio')">＋</button></div>
     <h3>Prêmio Emplacamento</h3><div id="admFaixasEmpl"></div>
     <div class="admin-row"><input id="feMin" class="narrow" type="number" placeholder="Qt mín."><input id="fePremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasEmpl','feMin','fePremio')">＋</button></div></div>
+  <div class="card"><h2>💳 Excedente — Juros de Cartão</h2>
+    <p class="muted">Consulta exclusiva do administrador. Estes valores não entram no valor da moto nem na comissão.</p>
+    <label>Mês de referência</label>
+    <input type="month" id="jurosMes" value="${mesAtual}" onchange="renderJuros()">
+    <div id="jurosResultado" style="margin-top:12px"></div></div>
   <div class="card"><h2>🗑️ Zona de perigo</h2>
     <button class="btn danger" onclick="admLimparMes()">Apagar lançamentos de ${nomeMes(mesAtual)}</button></div>`;
   admRenderListas();
+  renderJuros();
+}
+/* Consulta exclusiva do admin: excedente de juros de cartão */
+function renderJuros(){
+  if(!isAdmin()||!$('jurosMes')) return;
+  const mes=$('jurosMes').value||mesAtual;
+  const itens=lancAll().filter(l=>l.mes===mes&&l.tipo==='venda'&&jurosLanc(l)>0)
+    .sort((a,b)=>a.data.localeCompare(b.data));
+  const total=itens.reduce((s,l)=>s+jurosLanc(l),0);
+  const porVend={};
+  itens.forEach(l=>{ porVend[l.vendedor]=(porVend[l.vendedor]||0)+jurosLanc(l); });
+  $('jurosResultado').innerHTML=`
+    <div class="bigkpi"><div class="k"><div class="v">${fmt(total)}</div>
+      <div class="l">Valor Excedente juros cartão — ${nomeMes(mes)}</div></div></div>
+    ${itens.length?`<div class="scroll-x"><table>
+      <tr><th>Data</th><th>Cliente</th><th>Vendedor</th><th>Status</th><th>Juros</th></tr>
+      ${itens.map(l=>`<tr><td>${l.data.split('-').reverse().join('/')}</td><td>${l.cliente||'—'}</td><td>${l.vendedor}</td><td>${l.status}</td><td>${fmt(jurosLanc(l))}</td></tr>`).join('')}
+      <tr><td colspan="4"><b>TOTAL</b></td><td><b>${fmt(total)}</b></td></tr>
+    </table></div>
+    <h3>Por vendedor</h3>
+    ${Object.entries(porVend).sort((a,b)=>b[1]-a[1]).map(([v,t])=>`<span class="chip blue">${v}: ${fmt(t)}</span>`).join('')}
+    <button class="btn sec" onclick="exportarJuros()">📊 Exportar esta consulta</button>`
+    :'<p class="muted">Nenhum juros de cartão lançado neste mês.</p>'}`;
+}
+function exportarJuros(){
+  const mes=$('jurosMes').value||mesAtual;
+  const itens=lancAll().filter(l=>l.mes===mes&&l.tipo==='venda'&&jurosLanc(l)>0).sort((a,b)=>a.data.localeCompare(b.data));
+  const rows=[['EXCEDENTE — JUROS DE CARTÃO — '+nomeMes(mes)],[],
+              ['Data','Cliente','Vendedor','Moto','Valor da moto','Status','Juros (excedente)']];
+  itens.forEach(l=>rows.push([l.data,l.cliente||'',l.vendedor,l.moto||'',l.valorMoto||0,l.status,jurosLanc(l)]));
+  rows.push([]);
+  rows.push(['','','','','','TOTAL',itens.reduce((s,l)=>s+jurosLanc(l),0)]);
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=rows[2].map(()=>({wch:18}));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Juros cartão');
+  XLSX.writeFile(wb,`Juros_Cartao_${mes}.xlsx`);
 }
 function admRenderListas(){
   const c=cfg();
@@ -1204,7 +1247,6 @@ function admRenderListas(){
       <button class="btn sec sm" onclick="admToggleAtivo(${i})">${u.ativo!==false?'🟢':'⚫'}</button>
     </div>`).join('');
   $('admMotos').innerHTML=(c.motos||[]).map((m,i)=>`<div class="admin-row"><input value="${m}" onchange="admEditStr('motos',${i},this.value)"><button class="mini" onclick="admRmStr('motos',${i})">🗑️</button></div>`).join('');
-  $('admVersoes').innerHTML=(c.versoes||[]).map((v,i)=>`<div class="admin-row"><input value="${v}" onchange="admEditStr('versoes',${i},this.value)"><button class="mini" onclick="admRmStr('versoes',${i})">🗑️</button></div>`).join('');
   $('admBancos').innerHTML=(c.bancos||[]).map((b,i)=>`<div class="admin-row"><input value="${b.nome}" onchange="admEditBanco(${i},'nome',this.value)"><button class="mini" onclick="admRmStr('bancos',${i})">🗑️</button></div>`).join('');
   $('admRetornos').innerHTML=Object.entries(retornos()).map(([r,pc])=>`<div class="admin-row"><span class="muted" style="width:36px">${r}</span><input class="narrow" type="number" step="0.1" value="${pc}" onchange="admEditRetorno('${r}',this.value)"><span class="muted">%</span></div>`).join('');
   $('admDocs').innerHTML=(c.docTabelas||[]).map((t,i)=>`<div class="admin-row"><input value="${t.nome}" onchange="admEditDoc(${i},'nome',this.value)"><span class="muted">R$</span><input class="narrow" type="number" step="0.01" value="${t.valor!==undefined?t.valor:0}" onchange="admEditDoc(${i},'valor',this.value)"></div>`).join('');

@@ -1,4 +1,4 @@
-const CACHE = 'vendasroyal-v1';
+const CACHE = 'vendasroyal-v2';
 const ASSETS = [
   './',
   './index.html',
