@@ -1,4 +1,4 @@
-const CACHE = 'vendasroyal-v2';
+const CACHE = 'vendasroyal-v3-supabase';
 const ASSETS = [
   './',
   './index.html',
