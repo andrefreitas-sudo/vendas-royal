@@ -304,6 +304,11 @@ a{color:var(--blue)}
     </div>
   </section>
 
+  <!-- ============ USUÁRIOS ============ -->
+  <section id="tab-usuarios" class="hidden">
+    <div id="usuariosArea"></div>
+  </section>
+
   <!-- ============ ADMIN ============ -->
   <section id="tab-admin" class="hidden">
     <div id="adminArea"></div>
@@ -542,6 +547,7 @@ const TABS=[
   {id:'lista',ic:'📋',label:'Lançamentos',roles:['vendedor','supervisor','admin']},
   {id:'validar',ic:'✅',label:'Validar',roles:['supervisor','admin']},
   {id:'apuracao',ic:'💰',label:'Apuração',roles:['vendedor','supervisor','admin']},
+  {id:'usuarios',ic:'👥',label:'Usuários',roles:['admin']},
   {id:'admin',ic:'⚙️',label:'Admin',roles:['admin']}
 ];
 function entrarApp(){
@@ -566,6 +572,7 @@ function renderTabAtual(){
   if(tabAtiva==='lista') renderLista();
   if(tabAtiva==='validar') renderValidar();
   if(tabAtiva==='apuracao') renderApuracao();
+  if(tabAtiva==='usuarios') renderUsuarios();
   if(tabAtiva==='admin') renderAdmin();
 }
 function mudarMes(d){
@@ -1168,17 +1175,6 @@ function renderAdmin(){
   if(!isAdmin()) return;
   const c=cfg(); if(!c){ $('adminArea').innerHTML='<div class="card"><p class="muted">Sem dados. Sincronize primeiro.</p></div>'; return; }
   $('adminArea').innerHTML=`
-  <div class="card"><h2>👥 Usuários</h2><div id="admUsers"></div>
-    <h3>Novo usuário</h3>
-    <div class="admin-row">
-      <input id="nuNome" placeholder="Nome">
-      <input id="nuEmail" placeholder="E-mail" type="email">
-    </div>
-    <div class="admin-row">
-      <select id="nuRole"><option value="vendedor">Vendedor</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select>
-      <input id="nuSenha" placeholder="Senha inicial">
-      <button class="btn sm" onclick="admAddUser()">＋</button>
-    </div></div>
   <div class="card"><h2>🏍️ Modelos de Moto</h2><div id="admMotos"></div>
     <p class="muted">Cadastre modelo + versão numa linha só (ex.: HUNTER 350 REBEL BLACK)</p>
     <div class="admin-row"><input id="novaMoto" placeholder="Modelo e versão"><button class="btn sm" onclick="admAddStr('motos','novaMoto')">＋</button></div></div>
@@ -1196,7 +1192,8 @@ function renderAdmin(){
     <label>Comissão do vendedor sobre o líquido (%)</label>
     <input type="number" step="0.01" value="${c.pctComissaoVendFin!==undefined?c.pctComissaoVendFin:10}" onchange="admSet('pctComissaoVendFin',this.value)"></div>
   <div class="card"><h2>📄 Tabelas de Documentação</h2>
-    <p class="muted">Valor fixo de comissão por documentação feita</p><div id="admDocs"></div></div>
+    <p class="muted">Valor fixo de comissão por documentação feita. Use 0 para tabelas sem comissão.</p><div id="admDocs"></div>
+    <div class="admin-row"><input id="novaDocNome" placeholder="Nome (ex.: Tabela 0)"><span class="muted">R$</span><input id="novaDocValor" class="narrow" type="number" step="0.01" placeholder="0"><button class="btn sm" onclick="admAddDoc()">＋</button></div></div>
   <div class="card"><h2>💵 Percentuais e Prêmios</h2>
     <label>Comissão motos (%)</label><input type="number" step="0.01" value="${c.pctMoto}" onchange="admSet('pctMoto',this.value)">
     <label>Comissão acessórios (%)</label><input type="number" step="0.01" value="${c.pctAcess}" onchange="admSet('pctAcess',this.value)">
@@ -1253,47 +1250,111 @@ function exportarJuros(){
 }
 function admRenderListas(){
   const c=cfg();
-  $('admUsers').innerHTML=usuarios().map((u,i)=>`
-    <div class="admin-row">
-      <input value="${u.nome}" onchange="admEditUser(${i},'nome',this.value)">
-      <input value="${u.email}" onchange="admEditUser(${i},'email',this.value)">
-      <select onchange="admEditUser(${i},'role',this.value)">
-        ${['vendedor','supervisor','admin'].map(r=>`<option ${u.role===r?'selected':''}>${r}</option>`).join('')}
-      </select>
-      <button class="btn sec sm" onclick="admResetSenha(${i})">🔑</button>
-      <button class="btn sec sm" onclick="admToggleAtivo(${i})">${u.ativo!==false?'🟢':'⚫'}</button>
-    </div>`).join('');
   $('admMotos').innerHTML=(c.motos||[]).map((m,i)=>`<div class="admin-row"><input value="${m}" onchange="admEditStr('motos',${i},this.value)"><button class="mini" onclick="admRmStr('motos',${i})">🗑️</button></div>`).join('');
   $('admBancos').innerHTML=(c.bancos||[]).map((b,i)=>`<div class="admin-row"><input value="${b.nome}" onchange="admEditBanco(${i},'nome',this.value)"><button class="mini" onclick="admRmStr('bancos',${i})">🗑️</button></div>`).join('');
   $('admRetornos').innerHTML=Object.entries(retornos()).map(([r,pc])=>`<div class="admin-row"><span class="muted" style="width:36px">${r}</span><input class="narrow" type="number" step="0.1" value="${pc}" onchange="admEditRetorno('${r}',this.value)"><span class="muted">%</span></div>`).join('');
-  $('admDocs').innerHTML=(c.docTabelas||[]).map((t,i)=>`<div class="admin-row"><input value="${t.nome}" onchange="admEditDoc(${i},'nome',this.value)"><span class="muted">R$</span><input class="narrow" type="number" step="0.01" value="${t.valor!==undefined?t.valor:0}" onchange="admEditDoc(${i},'valor',this.value)"></div>`).join('');
+  $('admDocs').innerHTML=(c.docTabelas||[]).map((t,i)=>`<div class="admin-row"><input value="${t.nome}" onchange="admEditDoc(${i},'nome',this.value)"><span class="muted">R$</span><input class="narrow" type="number" step="0.01" value="${t.valor!==undefined?t.valor:0}" onchange="admEditDoc(${i},'valor',this.value)"><button class="mini" onclick="admRmDoc(${i})">🗑️</button></div>`).join('');
   $('admFaixasQt').innerHTML=(c.faixasQt||[]).map((f,i)=>`<div class="admin-row"><span class="muted">≥</span><input class="narrow" type="number" value="${f.min}" onchange="admEditFaixa('faixasQt',${i},'min',this.value)"><span class="muted">vendas →</span><input type="number" value="${f.premio}" onchange="admEditFaixa('faixasQt',${i},'premio',this.value)"><button class="mini" onclick="admRmStr('faixasQt',${i})">🗑️</button></div>`).join('');
   $('admFaixasEmpl').innerHTML=(c.faixasEmpl||[]).map((f,i)=>`<div class="admin-row"><span class="muted">≥</span><input class="narrow" type="number" value="${f.min}" onchange="admEditFaixa('faixasEmpl',${i},'min',this.value)"><span class="muted">docs →</span><input type="number" value="${f.premio}" onchange="admEditFaixa('faixasEmpl',${i},'premio',this.value)"><button class="mini" onclick="admRmStr('faixasEmpl',${i})">🗑️</button></div>`).join('');
 }
 function saveConfig(){ queue({file:'config',op:'full',data:cfg()}); }
 function saveUsuarios(){ queue({file:'usuarios',op:'full',data:usuarios()}); }
-async function admAddUser(){
-  const nome=$('nuNome').value.trim().toUpperCase(), email=$('nuEmail').value.trim().toLowerCase(),
-        role=$('nuRole').value, senha=$('nuSenha').value;
-  if(!nome||!email||senha.length<6) return toast('Preencha nome, e-mail e senha (mín. 6)', true);
-  if(usuarios().some(u=>u.email.toLowerCase()===email)) return toast('E-mail já cadastrado', true);
-  const sb2=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
-  const r=await sb2.auth.signUp({email:email,password:senha,options:{data:{nome:nome}}});
-  if(r.error) return toast('Não foi possível criar: '+r.error.message, true);
-  if(role!=='vendedor'&&r.data&&r.data.user){
-    await sb.from('perfis').update({role:role}).eq('id',r.data.user.id);
-  }
-  $('nuNome').value=''; $('nuEmail').value=''; $('nuSenha').value='';
-  toast('Usuário criado!');
-  await syncAll();
-  renderAdmin();
+/* ================= GESTÃO DE USUÁRIOS ================= */
+function renderUsuarios(){
+  if(!isAdmin()) return;
+  const us=usuarios();
+  const cont=(r)=>us.filter(u=>u.role===r).length;
+  const linhas=us.map((u,i)=>{
+    const inativo=u.ativo===false;
+    return '<div class="list-item" style="border-left-color:'+(inativo?'#d9534f':u.role==='admin'?'#f59e0b':u.role==='supervisor'?'#2067b3':'#67a816')+'">'+
+      '<div class="info">'+
+        '<div class="t1">'+u.nome+(inativo?' <span class="chip red">inativo</span>':'')+'</div>'+
+        '<div class="t2">'+u.email+'</div>'+
+      '</div>'+
+      '<select onchange="usrSetRole('+i+',this.value)" style="max-width:130px">'+
+        ['vendedor','supervisor','admin'].map(r=>'<option value="'+r+'"'+(u.role===r?' selected':'')+'>'+
+          (r==='vendedor'?'Vendedor':r==='supervisor'?'Supervisor':'Administrador')+'</option>').join('')+
+      '</select>'+
+      '<button class="btn sec sm" title="Enviar link de nova senha" onclick="usrResetSenha('+i+')">🔑</button>'+
+      '<button class="btn sec sm" title="'+(inativo?'Reativar':'Desativar')+'" onclick="usrToggle('+i+')">'+(inativo?'⚫':'🟢')+'</button>'+
+    '</div>';
+  }).join('');
+
+  $('usuariosArea').innerHTML=
+  '<div class="card"><h2>👥 Equipe</h2>'+
+    '<div class="bigkpi">'+
+      '<div class="k"><div class="v">'+cont('vendedor')+'</div><div class="l">Vendedores</div></div>'+
+      '<div class="k"><div class="v">'+cont('supervisor')+'</div><div class="l">Supervisores</div></div>'+
+      '<div class="k"><div class="v">'+cont('admin')+'</div><div class="l">Administradores</div></div>'+
+    '</div>'+
+    '<h3>Usuários cadastrados</h3>'+
+    (linhas||'<p class="muted">Nenhum usuário ainda.</p>')+
+    '<p class="muted">O papel é salvo assim que você troca no seletor. 🔑 envia link de nova senha por e-mail. 🟢/⚫ ativa ou desativa o acesso.</p>'+
+  '</div>'+
+  '<div class="card"><h2>➕ Cadastrar usuário</h2>'+
+    '<label>Nome completo</label><input id="nuNome" placeholder="Ex.: GABRIEL VIEIRA">'+
+    '<label>E-mail</label><input id="nuEmail" type="email" placeholder="nome@bravick.com.br">'+
+    '<label>Perfil de acesso</label>'+
+    '<select id="nuRole"><option value="vendedor">Vendedor</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select>'+
+    '<label>Senha provisória <span class="muted">(deixe em branco para o sistema gerar e enviar o link por e-mail)</span></label>'+
+    '<input id="nuSenha" type="text" placeholder="mínimo 6 caracteres — ou deixe vazio">'+
+    '<button class="btn" onclick="usrCriar()">Cadastrar usuário</button>'+
+    '<p id="nuMsg" class="muted" style="margin-top:8px"></p>'+
+  '</div>';
 }
-async function admResetSenha(i){
+function usrSetRole(i,role){
+  const lista=usuarios(); lista[i].role=role;
+  queue({file:'usuarios',op:'full',data:lista});
+  toast(lista[i].nome+' agora é '+(role==='vendedor'?'vendedor':role==='supervisor'?'supervisor':'administrador'));
+  renderUsuarios();
+}
+function usrToggle(i){
+  const lista=usuarios(); lista[i].ativo=lista[i].ativo===false;
+  queue({file:'usuarios',op:'full',data:lista});
+  renderUsuarios();
+}
+async function usrResetSenha(i){
   const u=usuarios()[i];
-  if(!confirm('Enviar link de redefinição de senha para '+u.email+'?')) return;
+  if(!confirm('Enviar link de nova senha para '+u.email+'?')) return;
   const r=await sb.auth.resetPasswordForEmail(u.email,{redirectTo:location.origin+location.pathname});
   if(r.error) return toast('Não foi possível enviar: '+r.error.message, true);
   toast('Link enviado para '+u.email);
+}
+function senhaAleatoria(){
+  const a='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#';
+  let s=''; const buf=new Uint32Array(16); crypto.getRandomValues(buf);
+  for(let i=0;i<16;i++) s+=a[buf[i]%a.length];
+  return s;
+}
+async function usrCriar(){
+  const nome=$('nuNome').value.trim().toUpperCase();
+  const email=$('nuEmail').value.trim().toLowerCase();
+  const role=$('nuRole').value;
+  let senha=$('nuSenha').value;
+  const enviarLink=!senha;
+  if(!nome||!email) return toast('Preencha nome e e-mail', true);
+  if(senha&&senha.length<6) return toast('A senha provisória precisa de 6 caracteres', true);
+  if(usuarios().some(u=>(u.email||'').toLowerCase()===email)) return toast('E-mail já cadastrado', true);
+  if(!senha) senha=senhaAleatoria();
+  $('nuMsg').textContent='Cadastrando...';
+  const sb2=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+  const r=await sb2.auth.signUp({email:email,password:senha,options:{data:{nome:nome}}});
+  if(r.error){ $('nuMsg').textContent=''; return toast('Não foi possível cadastrar: '+r.error.message, true); }
+  if(role!=='vendedor'&&r.data&&r.data.user){
+    await sb.from('perfis').update({role:role}).eq('id',r.data.user.id);
+  }
+  if(enviarLink){
+    const e2=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+    $('nuMsg').textContent=e2.error
+      ? 'Usuário criado, mas o e-mail não saiu ('+e2.error.message+'). Use o botão 🔑 mais tarde.'
+      : 'Usuário criado. Link para definir a senha enviado para '+email+'.';
+  }else{
+    $('nuMsg').textContent='Usuário criado. Informe a senha provisória e peça para trocar no primeiro acesso.';
+  }
+  $('nuNome').value=''; $('nuEmail').value=''; $('nuSenha').value='';
+  toast('Usuário cadastrado!');
+  await syncAll();
+  renderUsuarios();
 }
 function admToggleAtivo(i){
   usuarios()[i].ativo=usuarios()[i].ativo===false;
@@ -1316,6 +1377,22 @@ function admAddBanco(){
 }
 function admEditBanco(i,campo,v){ cfg().bancos[i][campo]=v.toUpperCase(); saveConfig(); }
 function admEditRetorno(r,v){ const c=cfg(); c.retornos=retornos(); c.retornos[r]=parseFloat(v)||0; saveConfig(); }
+function admAddDoc(){
+  const n=$('novaDocNome').value.trim();
+  if(!n) return toast('Informe o nome da tabela', true);
+  const v=parseFloat($('novaDocValor').value)||0;
+  const c=cfg(); c.docTabelas=c.docTabelas||[];
+  c.docTabelas.push({id:uid(),nome:n,valor:v});
+  $('novaDocNome').value=''; $('novaDocValor').value='';
+  saveConfig(); admRenderListas(); renderFormBasics();
+  toast('Tabela criada');
+}
+function admRmDoc(i){
+  const c=cfg();
+  if(!confirm('Remover '+c.docTabelas[i].nome+'? Lançamentos antigos que usam essa tabela ficam sem comissão de documentação.')) return;
+  c.docTabelas.splice(i,1);
+  saveConfig(); admRenderListas(); renderFormBasics();
+}
 function admEditDoc(i,campo,v){ cfg().docTabelas[i][campo]=campo==='valor'?(parseFloat(v)||0):v; saveConfig(); renderFormBasics(); }
 function admAddFaixa(lista,idMin,idPremio){
   const min=parseFloat($(idMin).value)||0, premio=parseFloat($(idPremio).value)||0;
