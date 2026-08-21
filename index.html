@@ -8,6 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <style>
 :root{
   --card:#ffffff; --card2:#f5f7f9; --border:#e2e7ec;
@@ -109,23 +110,6 @@ a{color:var(--blue)}
 </head>
 <body>
 
-<!-- ============ SETUP ============ -->
-<div id="scrSetup" class="login-wrap hidden">
-  <div class="logo">🏍️</div>
-  <h1>Configuração inicial</h1>
-  <div class="card">
-    <p class="muted">Conecte este aparelho ao banco de dados (repositório privado no GitHub). Peça a chave de acesso ao administrador.</p>
-    <label>Usuário/organização do GitHub</label>
-    <input id="cfgOwner" value="andrefreitas-sudo">
-    <label>Repositório de dados</label>
-    <input id="cfgRepo" value="vendas-motos-dados">
-    <label>Chave de acesso (token)</label>
-    <input id="cfgToken" type="password" placeholder="github_pat_...">
-    <button class="btn" onclick="salvarSetup()">Conectar</button>
-    <p id="setupMsg" class="muted" style="margin-top:8px"></p>
-  </div>
-</div>
-
 <!-- ============ LOGIN ============ -->
 <div id="scrLogin" class="login-wrap hidden">
   <div class="logo">🏍️</div>
@@ -137,8 +121,31 @@ a{color:var(--blue)}
     <input id="loginSenha" type="password" autocomplete="current-password">
     <button class="btn" onclick="fazerLogin()">Entrar</button>
     <p id="loginMsg" class="warn" style="margin-top:8px"></p>
+    <p class="muted" style="text-align:center;margin-top:10px">
+      <button class="iconbtn" style="color:var(--blue)" onclick="esqueciSenha()">Esqueci minha senha</button>
+    </p>
   </div>
-  <p class="muted" style="text-align:center"><button class="iconbtn" onclick="mostrarSetup()">⚙️ Configurar conexão</button></p>
+  <p class="muted" style="text-align:center">
+    <button class="iconbtn" style="color:rgba(255,255,255,.75)" onclick="show('scrCadastro')">Primeiro acesso — criar conta</button>
+  </p>
+</div>
+
+<!-- ============ PRIMEIRO ACESSO ============ -->
+<div id="scrCadastro" class="login-wrap hidden">
+  <div class="logo">🏍️</div>
+  <h1>Criar conta</h1>
+  <div class="card">
+    <p class="muted">Use o e-mail cadastrado pelo administrador. A conta entra como vendedor; o administrador ajusta o perfil depois.</p>
+    <label>Nome completo</label>
+    <input id="cadNome" type="text">
+    <label>E-mail</label>
+    <input id="cadEmail" type="email" inputmode="email">
+    <label>Senha (mínimo 6 caracteres)</label>
+    <input id="cadSenha" type="password" autocomplete="new-password">
+    <button class="btn" onclick="criarConta()">Criar conta</button>
+    <p id="cadMsg" class="warn" style="margin-top:8px"></p>
+    <button class="btn sec" onclick="show('scrLogin')">Voltar</button>
+  </div>
 </div>
 
 <!-- ============ APP ============ -->
@@ -317,16 +324,12 @@ function toast(msg,err){
   document.body.appendChild(t); setTimeout(()=>t.remove(),2800);
 }
 function nomeMes(ym){ const [y,m]=ym.split('-'); return new Date(y,m-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}); }
-async function sha256(s){
-  const b=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
-  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
-}
-function b64enc(s){ return btoa(unescape(encodeURIComponent(s))); }
-function b64dec(s){ return decodeURIComponent(escape(atob(s.replace(/\n/g,'')))); }
 
 /* ================= ESTADO ================= */
-let GH=JSON.parse(localStorage.getItem('mv2_gh')||'null');
-let SESSION=JSON.parse(localStorage.getItem('mv2_session')||'null');
+const SB_URL='https://dreniylkwaaiakjohjjs.supabase.co';
+const SB_KEY='sb_publishable_LoGkzdV5euoC9JhEjOe40w_1DCwIcmg';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+let SESSION=null;
 let CACHE=JSON.parse(localStorage.getItem('mv2_cache')||'{"usuarios":null,"config":null,"lancamentos":null}');
 let OUTBOX=JSON.parse(localStorage.getItem('mv2_outbox')||'[]');
 let mesAtual=new Date().toISOString().slice(0,7);
@@ -380,78 +383,80 @@ function lancVisiveis(){
   return isSup()?all:all.filter(l=>l.vendedor===SESSION.nome);
 }
 
-/* ================= GITHUB API ================= */
-const API='https://api.github.com/repos/';
-function ghHeaders(){ return {'Authorization':'Bearer '+GH.token,'Accept':'application/vnd.github+json'}; }
-async function ghGet(file){
-  const r=await fetch(API+GH.owner+'/'+GH.repo+'/contents/'+file+'.json?ref=main&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'});
-  if(!r.ok) throw new Error('GET '+file+' '+r.status);
-  const j=await r.json();
-  return {data:JSON.parse(b64dec(j.content)), sha:j.sha};
+/* ================= BANCO (SUPABASE) ================= */
+function rowToLanc(r){
+  return Object.assign({
+    id:r.id, tipo:r.tipo, vendedor:r.vendedor, cliente:r.cliente,
+    data:r.data, mes:r.mes, status:r.status,
+    criadoPor:r.criado_por, validadoPor:r.validado_por,
+    motivoRejeicao:r.motivo_rejeicao, updatedAt:Number(r.updated_at)||0
+  }, r.dados||{});
 }
-async function ghPut(file,data,sha,msg){
-  const body={message:msg||('update '+file),content:b64enc(JSON.stringify(data,null,1)),branch:'main'};
-  if(sha) body.sha=sha;
-  const r=await fetch(API+GH.owner+'/'+GH.repo+'/contents/'+file+'.json',{method:'PUT',headers:ghHeaders(),body:JSON.stringify(body)});
-  if(!r.ok) throw new Error('PUT '+file+' '+r.status);
-  const j=await r.json();
-  return j.content.sha;
+function lancToRow(l){
+  const fixos=['id','tipo','vendedor','cliente','data','mes','status','criadoPor','validadoPor','motivoRejeicao','updatedAt'];
+  const dados={};
+  Object.keys(l).forEach(k=>{ if(fixos.indexOf(k)<0) dados[k]=l[k]; });
+  return {id:l.id,tipo:l.tipo,vendedor:l.vendedor,cliente:l.cliente||null,
+    data:l.data,mes:l.mes,status:l.status,
+    criado_por:l.criadoPor||null,validado_por:l.validadoPor||null,
+    motivo_rejeicao:l.motivoRejeicao||null,updated_at:l.updatedAt||Date.now(),dados:dados};
 }
 
 /* ================= SYNC ================= */
 function setDot(cls){ const d=$('syncDot'); if(d){d.className='dot '+cls;} }
 async function flushOutbox(){
   if(!OUTBOX.length) return;
-  /* lançamentos: read-modify-write */
   const lops=OUTBOX.filter(o=>o.file==='lancamentos');
-  if(lops.length){
-    for(let tent=0;tent<2;tent++){
-      try{
-        const remote=await ghGet('lancamentos');
-        let arr=remote.data;
-        lops.forEach(op=>{
-          if(op.op==='delete') arr=arr.filter(x=>x.id!==op.id);
-          else{
-            const i=arr.findIndex(x=>x.id===op.record.id);
-            if(i>=0){ if(!arr[i].updatedAt||op.record.updatedAt>=arr[i].updatedAt) arr[i]=op.record; }
-            else arr.push(op.record);
-          }
-        });
-        const sha=await ghPut('lancamentos',arr,remote.sha,'lançamentos por '+SESSION.nome);
-        CACHE.lancamentos={data:arr,sha};
-        OUTBOX=OUTBOX.filter(o=>o.file!=='lancamentos');
-        break;
-      }catch(e){ if(tent===1) throw e; }
+  for(const op of lops){
+    if(op.op==='delete'){
+      const r=await sb.from('lancamentos').delete().eq('id',op.id);
+      if(r.error) throw r.error;
+    }else{
+      const r=await sb.from('lancamentos').upsert(lancToRow(op.record));
+      if(r.error) throw r.error;
     }
   }
-  /* config / usuarios: full file */
-  for(const f of ['config','usuarios']){
-    const ops=OUTBOX.filter(o=>o.file===f);
-    if(!ops.length) continue;
-    for(let tent=0;tent<2;tent++){
-      try{
-        let sha=null;
-        try{ const rem=await ghGet(f); sha=rem.sha; }catch(e){}
-        const data=ops[ops.length-1].data;
-        const nsha=await ghPut(f,data,sha,f+' por '+SESSION.nome);
-        CACHE[f]={data,sha:nsha};
-        OUTBOX=OUTBOX.filter(o=>o.file!==f);
-        break;
-      }catch(e){ if(tent===1) throw e; }
+  if(lops.length) OUTBOX=OUTBOX.filter(o=>o.file!=='lancamentos');
+
+  const cops=OUTBOX.filter(o=>o.file==='config');
+  if(cops.length){
+    const r=await sb.from('config').update({dados:cops[cops.length-1].data}).eq('id',1);
+    if(r.error) throw r.error;
+    OUTBOX=OUTBOX.filter(o=>o.file!=='config');
+  }
+
+  const uops=OUTBOX.filter(o=>o.file==='usuarios');
+  if(uops.length){
+    for(const u of uops[uops.length-1].data){
+      if(!u.id) continue;
+      const r=await sb.from('perfis').update({nome:u.nome,email:u.email,role:u.role,ativo:u.ativo!==false}).eq('id',u.id);
+      if(r.error) throw r.error;
     }
+    OUTBOX=OUTBOX.filter(o=>o.file!=='usuarios');
   }
   saveLocal();
 }
 async function syncAll(manual){
-  if(!GH||syncing) return;
+  if(!SESSION||syncing) return;
   syncing=true;
   try{
     await flushOutbox();
-    const [u,c,l]=await Promise.all([ghGet('usuarios'),ghGet('config'),ghGet('lancamentos')]);
-    CACHE.usuarios=u; CACHE.config=c; CACHE.lancamentos=l;
+    const res=await Promise.all([
+      sb.from('perfis').select('*').order('nome'),
+      sb.from('config').select('dados').eq('id',1).maybeSingle(),
+      sb.from('lancamentos').select('*')
+    ]);
+    const p=res[0], c=res[1], l=res[2];
+    if(p.error) throw p.error;
+    if(c.error) throw c.error;
+    if(l.error) throw l.error;
+    CACHE.usuarios={data:(p.data||[]).map(r=>({id:r.id,email:r.email,nome:r.nome,role:r.role,ativo:r.ativo}))};
+    CACHE.config={data:(c.data&&c.data.dados)||{}};
+    CACHE.lancamentos={data:(l.data||[]).map(rowToLanc)};
     saveLocal();
     setDot(OUTBOX.length?'pend':'on');
-    if(SESSION){ renderTabAtual(); }
+    renderFormBasics();
+    renderTabAtual();
     if(manual) toast('Sincronizado!');
   }catch(e){
     setDot(navigator.onLine?(OUTBOX.length?'pend':'on'):'off');
@@ -461,7 +466,7 @@ async function syncAll(manual){
 }
 function queue(op){
   OUTBOX.push(op); saveLocal(); setDot('pend');
-  syncAll(); /* tenta na hora; se offline, fica na fila */
+  syncAll();
 }
 window.addEventListener('online',()=>syncAll());
 window.addEventListener('offline',()=>setDot('off'));
@@ -469,52 +474,64 @@ setInterval(()=>syncAll(),60000);
 
 /* ================= TELAS ================= */
 function show(scr){
-  ['scrSetup','scrLogin','scrApp'].forEach(s=>$(s).classList.toggle('hidden',s!==scr));
+  ['scrLogin','scrCadastro','scrApp'].forEach(s=>$(s).classList.toggle('hidden',s!==scr));
 }
-function mostrarSetup(){ show('scrSetup'); }
-async function salvarSetup(){
-  const owner=$('cfgOwner').value.trim(), repo=$('cfgRepo').value.trim(), token=$('cfgToken').value.trim();
-  if(!owner||!repo||!token){ $('setupMsg').textContent='Preencha todos os campos.'; return; }
-  $('setupMsg').textContent='Testando conexão...';
-  GH={owner,repo,token};
-  try{
-    const u=await ghGet('usuarios');
-    CACHE.usuarios=u; saveLocal();
-    localStorage.setItem('mv2_gh',JSON.stringify(GH));
-    $('setupMsg').textContent='';
-    toast('Conectado!');
-    show('scrLogin');
-  }catch(e){
-    GH=JSON.parse(localStorage.getItem('mv2_gh')||'null');
-    $('setupMsg').textContent='❌ Falha na conexão. Confira usuário, repositório e token. ('+e.message+')';
-  }
+async function carregarPerfil(){
+  const u=await sb.auth.getUser();
+  const user=u.data?u.data.user:null;
+  if(!user) return null;
+  const r=await sb.from('perfis').select('*').eq('id',user.id).maybeSingle();
+  if(r.error||!r.data) return null;
+  if(r.data.ativo===false) return 'inativo';
+  return {id:r.data.id,email:r.data.email,nome:r.data.nome,role:r.data.role};
 }
 async function fazerLogin(){
   const email=$('loginEmail').value.trim().toLowerCase(), senha=$('loginSenha').value;
   if(!email||!senha){ $('loginMsg').textContent='Informe e-mail e senha.'; return; }
+  $('loginMsg').textContent='Entrando...';
+  const r=await sb.auth.signInWithPassword({email:email,password:senha});
+  if(r.error){ $('loginMsg').textContent='E-mail ou senha incorretos.'; return; }
+  const perfil=await carregarPerfil();
+  if(perfil==='inativo'){ await sb.auth.signOut(); $('loginMsg').textContent='Usuário desativado. Fale com o administrador.'; return; }
+  if(!perfil){ await sb.auth.signOut(); $('loginMsg').textContent='Perfil não encontrado. Fale com o administrador.'; return; }
+  SESSION=perfil;
   $('loginMsg').textContent='';
-  try{ const u=await ghGet('usuarios'); CACHE.usuarios=u; saveLocal(); }catch(e){}
-  const hash=await sha256(senha);
-  const user=usuarios().find(u=>u.email.toLowerCase()===email&&u.ativo!==false);
-  if(!user||user.senhaHash!==hash){ $('loginMsg').textContent='E-mail ou senha incorretos.'; return; }
-  SESSION={id:user.id,email:user.email,nome:user.nome,role:user.role};
-  localStorage.setItem('mv2_session',JSON.stringify(SESSION));
   entrarApp();
 }
-function logout(){
-  SESSION=null; localStorage.removeItem('mv2_session');
+async function criarConta(){
+  const nome=$('cadNome').value.trim().toUpperCase();
+  const email=$('cadEmail').value.trim().toLowerCase();
+  const senha=$('cadSenha').value;
+  if(!nome||!email){ $('cadMsg').textContent='Preencha nome e e-mail.'; return; }
+  if(senha.length<6){ $('cadMsg').textContent='A senha precisa ter ao menos 6 caracteres.'; return; }
+  $('cadMsg').textContent='Criando...';
+  const r=await sb.auth.signUp({email:email,password:senha,options:{data:{nome:nome}}});
+  if(r.error){ $('cadMsg').textContent='Não foi possível criar: '+r.error.message; return; }
+  $('cadMsg').textContent='';
+  toast('Conta criada! Faça login.');
+  $('loginEmail').value=email;
+  show('scrLogin');
+}
+async function esqueciSenha(){
+  const email=($('loginEmail').value||'').trim().toLowerCase();
+  if(!email){ $('loginMsg').textContent='Digite seu e-mail acima e clique de novo.'; return; }
+  const r=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+  if(r.error) toast('Não foi possível enviar o e-mail', true);
+  else toast('Link de redefinição enviado para o seu e-mail');
+}
+async function logout(){
+  await sb.auth.signOut();
+  SESSION=null;
+  localStorage.removeItem('mv2_cache');
+  localStorage.removeItem('mv2_outbox');
+  CACHE={usuarios:null,config:null,lancamentos:null}; OUTBOX=[];
   show('scrLogin');
 }
 async function trocarSenha(){
-  const atual=prompt('Senha atual:'); if(atual===null) return;
-  const hash=await sha256(atual);
-  const users=usuarios();
-  const me=users.find(u=>u.id===SESSION.id);
-  if(!me||me.senhaHash!==hash) return toast('Senha atual incorreta', true);
-  const nova=prompt('Nova senha (mín. 6 caracteres):'); if(nova===null) return;
+  const nova=prompt('Nova senha (mínimo 6 caracteres):'); if(nova===null) return;
   if(nova.length<6) return toast('Senha muito curta', true);
-  me.senhaHash=await sha256(nova);
-  queue({file:'usuarios',op:'full',data:users});
+  const r=await sb.auth.updateUser({password:nova});
+  if(r.error) return toast('Não foi possível alterar: '+r.error.message, true);
   toast('Senha alterada!');
 }
 
@@ -1260,19 +1277,23 @@ async function admAddUser(){
         role=$('nuRole').value, senha=$('nuSenha').value;
   if(!nome||!email||senha.length<6) return toast('Preencha nome, e-mail e senha (mín. 6)', true);
   if(usuarios().some(u=>u.email.toLowerCase()===email)) return toast('E-mail já cadastrado', true);
-  usuarios().push({id:uid(),email,nome,senhaHash:await sha256(senha),role,ativo:true});
-  saveUsuarios(); renderAdmin(); toast('Usuário criado!');
-}
-function admEditUser(i,campo,v){
-  const u=usuarios()[i];
-  u[campo]=campo==='nome'?v.toUpperCase():campo==='email'?v.toLowerCase():v;
-  saveUsuarios();
+  const sb2=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+  const r=await sb2.auth.signUp({email:email,password:senha,options:{data:{nome:nome}}});
+  if(r.error) return toast('Não foi possível criar: '+r.error.message, true);
+  if(role!=='vendedor'&&r.data&&r.data.user){
+    await sb.from('perfis').update({role:role}).eq('id',r.data.user.id);
+  }
+  $('nuNome').value=''; $('nuEmail').value=''; $('nuSenha').value='';
+  toast('Usuário criado!');
+  await syncAll();
+  renderAdmin();
 }
 async function admResetSenha(i){
-  const nova=prompt('Nova senha para '+usuarios()[i].nome+':'); if(nova===null) return;
-  if(nova.length<6) return toast('Senha muito curta', true);
-  usuarios()[i].senhaHash=await sha256(nova);
-  saveUsuarios(); toast('Senha redefinida!');
+  const u=usuarios()[i];
+  if(!confirm('Enviar link de redefinição de senha para '+u.email+'?')) return;
+  const r=await sb.auth.resetPasswordForEmail(u.email,{redirectTo:location.origin+location.pathname});
+  if(r.error) return toast('Não foi possível enviar: '+r.error.message, true);
+  toast('Link enviado para '+u.email);
 }
 function admToggleAtivo(i){
   usuarios()[i].ativo=usuarios()[i].ativo===false;
@@ -1312,10 +1333,13 @@ function admLimparMes(){
 }
 
 /* ================= INIT ================= */
-function init(){
+async function init(){
   if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
-  if(!GH){ show('scrSetup'); return; }
-  if(!SESSION){ show('scrLogin'); return; }
+  const s=await sb.auth.getSession();
+  if(!s.data || !s.data.session){ show('scrLogin'); return; }
+  const perfil=await carregarPerfil();
+  if(!perfil||perfil==='inativo'){ await sb.auth.signOut(); show('scrLogin'); return; }
+  SESSION=perfil;
   entrarApp();
 }
 init();
