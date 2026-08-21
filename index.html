@@ -480,7 +480,34 @@ function queue(op){
 }
 window.addEventListener('online',()=>syncAll());
 window.addEventListener('offline',()=>setDot('off'));
-setInterval(()=>syncAll(),60000);
+
+/* ---------- TEMPO REAL ----------
+   O banco avisa o app no instante em que alguém grava algo.
+   O intervalo abaixo é só rede de segurança, caso a conexão caia. */
+let rtCanal=null, rtTimer=null, rtLigado=false;
+function syncEmBreve(){
+  clearTimeout(rtTimer);
+  rtTimer=setTimeout(()=>syncAll(),300);
+}
+function ligarTempoReal(){
+  if(rtCanal||!SESSION) return;
+  rtCanal=sb.channel('vendas-royal-'+Math.random().toString(36).slice(2,8))
+    .on('postgres_changes',{event:'*',schema:'public',table:'lancamentos'},syncEmBreve)
+    .on('postgres_changes',{event:'*',schema:'public',table:'config'},syncEmBreve)
+    .on('postgres_changes',{event:'*',schema:'public',table:'perfis'},syncEmBreve)
+    .subscribe(function(status){
+      rtLigado=(status==='SUBSCRIBED');
+      const d=$('syncDot');
+      if(d) d.title=rtLigado?'Tempo real ligado':'Atualizando periodicamente';
+    });
+}
+function desligarTempoReal(){
+  if(rtCanal){ try{ sb.removeChannel(rtCanal); }catch(e){} rtCanal=null; rtLigado=false; }
+}
+/* volta do bolso / troca de aba: atualiza na hora */
+document.addEventListener('visibilitychange',function(){ if(!document.hidden){ ligarTempoReal(); syncAll(); } });
+window.addEventListener('focus',function(){ syncAll(); });
+setInterval(()=>syncAll(),20000);
 
 /* ================= TELAS ================= */
 function show(scr){
@@ -530,6 +557,7 @@ async function esqueciSenha(){
   else toast('Link de redefinição enviado para o seu e-mail');
 }
 async function logout(){
+  desligarTempoReal();
   await sb.auth.signOut();
   SESSION=null;
   localStorage.removeItem('mv2_cache');
@@ -564,6 +592,7 @@ function entrarApp(){
   renderFormBasics();
   showTab('bi');
   syncAll();
+  ligarTempoReal();
 }
 function showTab(t){
   tabAtiva=t;
