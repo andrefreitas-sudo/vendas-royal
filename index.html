@@ -444,29 +444,34 @@ async function flushOutbox(){
 async function syncAll(manual){
   if(!SESSION||syncing) return;
   syncing=true;
+  let falhou=false;
+
+  try{ await flushOutbox(); }catch(e){ falhou=true; }
+
   try{
-    await flushOutbox();
-    const res=await Promise.all([
-      sb.from('perfis').select('*').order('nome'),
-      sb.from('config').select('dados').eq('id',1).maybeSingle(),
-      sb.from('lancamentos').select('*')
-    ]);
-    const p=res[0], c=res[1], l=res[2];
+    const p=await sb.from('perfis').select('id,nome,email,role,ativo');
     if(p.error) throw p.error;
+    const lista=(p.data||[]).map(r=>({id:r.id,email:r.email,nome:r.nome,role:r.role,ativo:r.ativo}));
+    lista.sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR'));
+    CACHE.usuarios={data:lista};
+  }catch(e){ falhou=true; }
+
+  try{
+    const c=await sb.from('config').select('dados').eq('id',1).maybeSingle();
     if(c.error) throw c.error;
-    if(l.error) throw l.error;
-    CACHE.usuarios={data:(p.data||[]).map(r=>({id:r.id,email:r.email,nome:r.nome,role:r.role,ativo:r.ativo}))};
     CACHE.config={data:(c.data&&c.data.dados)||{}};
+  }catch(e){ falhou=true; }
+
+  try{
+    const l=await sb.from('lancamentos').select('id,tipo,vendedor,cliente,data,mes,status,criado_por,validado_por,motivo_rejeicao,dados,updated_at');
+    if(l.error) throw l.error;
     CACHE.lancamentos={data:(l.data||[]).map(rowToLanc)};
-    saveLocal();
-    setDot(OUTBOX.length?'pend':'on');
-    renderFormBasics();
-    renderTabAtual();
-    if(manual) toast('Sincronizado!');
-  }catch(e){
-    setDot(navigator.onLine?(OUTBOX.length?'pend':'on'):'off');
-    if(manual) toast('Sem conexão — dados salvos no aparelho', true);
-  }
+  }catch(e){ falhou=true; }
+
+  saveLocal();
+  setDot(falhou?(navigator.onLine?'pend':'off'):(OUTBOX.length?'pend':'on'));
+  try{ renderFormBasics(); renderTabAtual(); }catch(e){}
+  if(manual) toast(falhou?'Sem conexão — dados salvos no aparelho':'Sincronizado!', falhou);
   syncing=false;
 }
 function queue(op){
@@ -1276,7 +1281,7 @@ function renderUsuarios(){
           (r==='vendedor'?'Vendedor':r==='supervisor'?'Supervisor':'Administrador')+'</option>').join('')+
       '</select>'+
       '<button class="btn sec sm" title="Enviar link de nova senha" onclick="usrResetSenha('+i+')">🔑</button>'+
-      '<button class="btn sec sm" title="'+(inativo?'Reativar':'Desativar')+'" onclick="usrToggle('+i+')">'+(inativo?'⚫':'🟢')+'</button>'+
+      '<button class="btn sec sm" onclick="usrToggle('+i+')">'+(inativo?'Reativar':'Desativar')+'</button>'+
     '</div>';
   }).join('');
 
