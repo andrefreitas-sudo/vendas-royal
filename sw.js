@@ -1,6 +1,5 @@
-const CACHE = 'vendasroyal-v5';
+const CACHE = 'vendasroyal-v6';
 
-/* Arquivos do próprio app que podem ficar guardados para uso offline */
 const ASSETS = [
   './',
   './index.html',
@@ -9,7 +8,6 @@ const ASSETS = [
   './icon-512.png'
 ];
 
-/* Bibliotecas externas que podem ficar guardadas (NUNCA a API do banco) */
 const CDN_PERMITIDO = [
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js'
@@ -38,19 +36,23 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   const mesmaOrigem = url.origin === self.location.origin;
 
-  /* API do banco e qualquer outro endereço externo: sempre rede, nunca cache */
+  /* API do banco e outros endereços externos: sempre rede, nunca cache */
   if (!mesmaOrigem && CDN_PERMITIDO.indexOf(url.href) < 0) return;
 
-  /* Página do app: rede primeiro, para pegar sempre a versão mais nova */
   const ehPagina = req.mode === 'navigate' ||
                    url.pathname.endsWith('/') ||
                    url.pathname.endsWith('.html');
+
   if (mesmaOrigem && ehPagina) {
+    /* Rede primeiro E ignorando o cache do navegador,
+       para a versão publicada chegar sempre. */
     e.respondWith(
-      fetch(req)
+      fetch(url.href, { cache: 'no-store' })
         .then(resp => {
-          const copia = resp.clone();
-          caches.open(CACHE).then(c => c.put(req, copia));
+          if (resp && resp.ok) {
+            const copia = resp.clone();
+            caches.open(CACHE).then(c => c.put(req, copia));
+          }
           return resp;
         })
         .catch(() => caches.match(req).then(hit => hit || caches.match('./index.html')))
@@ -58,7 +60,6 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  /* Ícones, manifest e bibliotecas: cache primeiro (não mudam) */
   e.respondWith(
     caches.match(req).then(hit => hit || fetch(req).then(resp => {
       if (resp && resp.ok) {
