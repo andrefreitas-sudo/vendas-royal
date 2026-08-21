@@ -125,27 +125,6 @@ a{color:var(--blue)}
       <button class="iconbtn" style="color:var(--blue)" onclick="esqueciSenha()">Esqueci minha senha</button>
     </p>
   </div>
-  <p class="muted" style="text-align:center">
-    <button class="iconbtn" style="color:rgba(255,255,255,.75)" onclick="show('scrCadastro')">Primeiro acesso — criar conta</button>
-  </p>
-</div>
-
-<!-- ============ PRIMEIRO ACESSO ============ -->
-<div id="scrCadastro" class="login-wrap hidden">
-  <div class="logo">🏍️</div>
-  <h1>Criar conta</h1>
-  <div class="card">
-    <p class="muted">Use o e-mail cadastrado pelo administrador. A conta entra como vendedor; o administrador ajusta o perfil depois.</p>
-    <label>Nome completo</label>
-    <input id="cadNome" type="text">
-    <label>E-mail</label>
-    <input id="cadEmail" type="email" inputmode="email">
-    <label>Senha (mínimo 6 caracteres)</label>
-    <input id="cadSenha" type="password" autocomplete="new-password">
-    <button class="btn" onclick="criarConta()">Criar conta</button>
-    <p id="cadMsg" class="warn" style="margin-top:8px"></p>
-    <button class="btn sec" onclick="show('scrLogin')">Voltar</button>
-  </div>
 </div>
 
 <!-- ============ APP ============ -->
@@ -408,6 +387,17 @@ function lancToRow(l){
 }
 
 /* ================= SYNC ================= */
+/* meses que o app mantém carregados: os 3 últimos + o mês em consulta */
+function mesesParaCarregar(){
+  const set={};
+  const hoje=new Date();
+  for(let i=0;i<3;i++){
+    const d=new Date(hoje.getFullYear(), hoje.getMonth()-i, 15);
+    set[d.toISOString().slice(0,7)]=true;
+  }
+  if(mesAtual) set[mesAtual]=true;
+  return Object.keys(set);
+}
 function setDot(cls){ const d=$('syncDot'); if(d){d.className='dot '+cls;} }
 async function flushOutbox(){
   if(!OUTBOX.length) return;
@@ -462,10 +452,15 @@ async function syncAll(manual){
     CACHE.config={data:(c.data&&c.data.dados)||{}};
   }catch(e){ falhou=true; }
 
+  /* Busca só os meses recentes + o mês que está sendo consultado.
+     Mantém o app leve mesmo com anos de histórico. */
   try{
-    const l=await sb.from('lancamentos').select('id,tipo,vendedor,cliente,data,mes,status,criado_por,validado_por,motivo_rejeicao,dados,updated_at');
+    const meses=mesesParaCarregar();
+    const l=await sb.from('lancamentos')
+      .select('id,tipo,vendedor,cliente,data,mes,status,criado_por,validado_por,motivo_rejeicao,dados,updated_at')
+      .in('mes',meses);
     if(l.error) throw l.error;
-    CACHE.lancamentos={data:(l.data||[]).map(rowToLanc)};
+    CACHE.lancamentos={data:(l.data||[]).map(rowToLanc), meses:meses};
   }catch(e){ falhou=true; }
 
   saveLocal();
@@ -511,7 +506,7 @@ setInterval(()=>syncAll(),20000);
 
 /* ================= TELAS ================= */
 function show(scr){
-  ['scrLogin','scrCadastro','scrApp'].forEach(s=>$(s).classList.toggle('hidden',s!==scr));
+  ['scrLogin','scrApp'].forEach(s=>{ const el=$(s); if(el) el.classList.toggle('hidden',s!==scr); });
 }
 async function carregarPerfil(){
   const u=await sb.auth.getUser();
@@ -534,20 +529,6 @@ async function fazerLogin(){
   SESSION=perfil;
   $('loginMsg').textContent='';
   entrarApp();
-}
-async function criarConta(){
-  const nome=$('cadNome').value.trim().toUpperCase();
-  const email=$('cadEmail').value.trim().toLowerCase();
-  const senha=$('cadSenha').value;
-  if(!nome||!email){ $('cadMsg').textContent='Preencha nome e e-mail.'; return; }
-  if(senha.length<6){ $('cadMsg').textContent='A senha precisa ter ao menos 6 caracteres.'; return; }
-  $('cadMsg').textContent='Criando...';
-  const r=await sb.auth.signUp({email:email,password:senha,options:{data:{nome:nome}}});
-  if(r.error){ $('cadMsg').textContent='Não foi possível criar: '+r.error.message; return; }
-  $('cadMsg').textContent='';
-  toast('Conta criada! Faça login.');
-  $('loginEmail').value=email;
-  show('scrLogin');
 }
 async function esqueciSenha(){
   const email=($('loginEmail').value||'').trim().toLowerCase();
@@ -614,6 +595,8 @@ function mudarMes(d){
   const [y,m]=mesAtual.split('-').map(Number);
   mesAtual=new Date(y,m-1+d,15).toISOString().slice(0,7);
   renderTabAtual();
+  const carregados=(CACHE.lancamentos&&CACHE.lancamentos.meses)||[];
+  if(carregados.indexOf(mesAtual)<0) syncAll();  /* mês antigo: busca sob demanda */
 }
 
 /* ================= B.I / METAS ================= */
@@ -1356,8 +1339,8 @@ function renderUsuarios(){
     '<label>E-mail</label><input id="nuEmail" type="email" placeholder="nome@bravick.com.br">'+
     '<label>Perfil de acesso</label>'+
     '<select id="nuRole"><option value="vendedor">Vendedor</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select>'+
-    '<label>Senha provisória <span class="muted">(recomendado — você informa à pessoa; se deixar vazio, o sistema tenta enviar link por e-mail)</span></label>'+
-    '<input id="nuSenha" type="text" placeholder="mínimo 6 caracteres — ou deixe vazio">'+
+    '<label>Senha provisória <span class="muted">(você informa à pessoa; ela troca no primeiro acesso)</span></label>'+
+    '<input id="nuSenha" type="text" placeholder="mínimo 6 caracteres">'+
     '<button class="btn" onclick="usrCriar()">Cadastrar usuário</button>'+
     '<p id="nuMsg" class="muted" style="margin-top:8px"></p>'+
   '</div>';
@@ -1400,27 +1383,14 @@ async function usrCriar(){
   const nome=$('nuNome').value.trim().toUpperCase();
   const email=$('nuEmail').value.trim().toLowerCase();
   const role=$('nuRole').value;
-  let senha=$('nuSenha').value;
-  const enviarLink=!senha;
+  const senha=$('nuSenha').value;
   if(!nome||!email) return toast('Preencha nome e e-mail', true);
-  if(senha&&senha.length<6) return toast('A senha provisória precisa de 6 caracteres', true);
+  if(senha.length<6) return toast('Defina uma senha com ao menos 6 caracteres', true);
   if(usuarios().some(u=>(u.email||'').toLowerCase()===email)) return toast('E-mail já cadastrado', true);
-  if(!senha) senha=senhaAleatoria();
   $('nuMsg').textContent='Cadastrando...';
-  const sb2=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
-  const r=await sb2.auth.signUp({email:email,password:senha,options:{data:{nome:nome}}});
+  const r=await sb.rpc('criar_usuario',{p_email:email,p_senha:senha,p_nome:nome,p_role:role});
   if(r.error){ $('nuMsg').textContent=''; return toast('Não foi possível cadastrar: '+r.error.message, true); }
-  if(role!=='vendedor'&&r.data&&r.data.user){
-    await sb.from('perfis').update({role:role}).eq('id',r.data.user.id);
-  }
-  if(enviarLink){
-    const e2=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
-    $('nuMsg').textContent=e2.error
-      ? 'Usuário criado, mas o e-mail não saiu ('+e2.error.message+'). Use o botão 🔑 mais tarde.'
-      : 'Usuário criado. Link para definir a senha enviado para '+email+'.';
-  }else{
-    $('nuMsg').textContent='Usuário criado. Informe a senha provisória e peça para trocar no primeiro acesso.';
-  }
+  $('nuMsg').textContent='Usuário criado. Informe a senha à pessoa e peça para trocar no primeiro acesso (ícone 🔑 no topo).';
   $('nuNome').value=''; $('nuEmail').value=''; $('nuSenha').value='';
   toast('Usuário cadastrado!');
   await syncAll();
