@@ -675,13 +675,13 @@ function renderBI(){
     $('btnMetas').classList.toggle('hidden',!isAdmin()); /* metas: somente administrador */
     const sel=$('biVend');
     const cur=sel.value;
-    sel.innerHTML='<option value="">🌐 Visão geral</option>'+vendedores().map(v=>`<option ${cur===v?'selected':''}>${v}</option>`).join('');
+    sel.innerHTML='<option value="">🌐 Visão geral</option>'+nomesApuracao(mesAtual).map(v=>`<option ${cur===v?'selected':''}>${v}</option>`).join('');
     const escolhido=sel.value;
     if(escolhido){ html=biCard('👤 '+escolhido,mesAtual,escolhido); }
     else{
       html=biCard('🌐 Resultado geral da loja',mesAtual,null);
       /* ranking */
-      const rows=vendedores().map(v=>{const s=statsDe(mesAtual,v);return {v,...s};}).sort((a,b)=>b.valorMotos-a.valorMotos);
+      const rows=nomesApuracao(mesAtual).map(v=>{const s=statsDe(mesAtual,v);return {v,...s};}).sort((a,b)=>b.valorMotos-a.valorMotos);
       html+=`<div class="card"><h2>🏆 Ranking do mês</h2><div class="scroll-x"><table>
         <tr><th>Vendedor</th><th>Motos</th><th>Valor</th><th>Docs</th><th>Acess.</th><th>SN</th><th>Pend.</th></tr>
         ${rows.map((r,i)=>`<tr><td>${i===0&&r.qtMotos>0?'🥇 ':''}${r.v}</td><td>${r.qtMotos}</td><td>${fmt(r.valorMotos)}</td><td>${r.qtDocs}</td><td>${fmt(r.valorAcess)}</td><td>${r.qtSN}</td><td>${r.pendentes||''}</td></tr>`).join('')}
@@ -1047,6 +1047,15 @@ function salvarIlaMes(){
   queue({file:'config',op:'full',data:c});
   renderApuracao();
 }
+/* nomes que devem aparecer na apuração do mês:
+   os vendedores cadastrados + qualquer nome que apareça nos lançamentos
+   (evita que um lançamento suma se o nome do cadastro mudar) */
+function nomesApuracao(mes){
+  const set={};
+  vendedores().forEach(v=>{ set[v]=true; });
+  lancAll().filter(l=>l.mes===mes).forEach(l=>{ if(l.vendedor) set[l.vendedor]=true; });
+  return Object.keys(set).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
 function premioFaixa(faixas,qtd){
   let p=0; (faixas||[]).slice().sort((a,b)=>a.min-b.min).forEach(f=>{ if(qtd>=f.min) p=f.premio; });
   return p;
@@ -1056,7 +1065,7 @@ function calcularApuracao(mes){
   const dsr=(c.dsrMeses||{})[mes]||{domFer:5,uteis:25};
   const fator=dsr.uteis>0?dsr.domFer/dsr.uteis:0;
   const res={};
-  const nomes=isSup()?vendedores():[SESSION.nome];
+  const nomes=isSup()?nomesApuracao(mes):[SESSION.nome];
   nomes.forEach(v=>{
     res[v]={valorMotos:0,qtVendas:0,comMotos:0,dsrMotos:0,comFin:0,dsrFin:0,valorAcess:0,comAcess:0,dsrAcess:0,
             valorFinanciado:0,finBruto:0,finLiquido:0,
