@@ -398,6 +398,30 @@ function mesesParaCarregar(){
   if(mesAtual) set[mesAtual]=true;
   return Object.keys(set);
 }
+/* ---------- TRAVA DE EDIÇÃO ----------
+   Enquanto o usuário está preenchendo qualquer formulário, as atualizações
+   vindas do banco continuam chegando e sendo guardadas, mas a tela NÃO é
+   redesenhada — era isso que zerava os campos no meio do preenchimento. */
+let editando=false, editandoDesde=0;
+function marcarEdicao(){ editando=true; editandoDesde=Date.now(); }
+function limparEdicao(){ editando=false; editandoDesde=0; }
+function podeRedesenhar(){
+  if(!editando) return true;
+  if(Date.now()-editandoDesde > 300000){ limparEdicao(); return true; } /* 5 min parado libera */
+  const el=document.activeElement;
+  const tag=el?(el.tagName||'').toLowerCase():'';
+  if(tag==='input'||tag==='select'||tag==='textarea') return false;
+  return false;
+}
+document.addEventListener('input', function(e){
+  const el=e.target;
+  if(el&&el.closest&&el.closest('#scrApp')) marcarEdicao();
+}, true);
+document.addEventListener('focusin', function(e){
+  const el=e.target, tag=el?(el.tagName||'').toLowerCase():'';
+  if((tag==='input'||tag==='select'||tag==='textarea')&&el.closest&&el.closest('#scrApp')) marcarEdicao();
+}, true);
+
 function setDot(cls){ const d=$('syncDot'); if(d){d.className='dot '+cls;} }
 async function flushOutbox(){
   if(!OUTBOX.length) return;
@@ -465,7 +489,12 @@ async function syncAll(manual){
 
   saveLocal();
   setDot(falhou?(navigator.onLine?'pend':'off'):(OUTBOX.length?'pend':'on'));
-  try{ if(tabAtiva!=='lancar') renderFormBasics(); renderTabAtual(); }catch(e){}
+  try{
+    if(podeRedesenhar()){
+      if(tabAtiva!=='lancar') renderFormBasics();
+      renderTabAtual();
+    }
+  }catch(e){}
   if(manual) toast(falhou?'Sem conexão — dados salvos no aparelho':'Sincronizado!', falhou);
   syncing=false;
 }
@@ -577,6 +606,7 @@ function entrarApp(){
   ligarTempoReal();
 }
 function showTab(t){
+  limparEdicao();
   tabAtiva=t;
   TABS.forEach(x=>{ const el=$('tab-'+x.id); if(el) el.classList.toggle('hidden',x.id!==t); });
   document.querySelectorAll('#navTabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
@@ -592,6 +622,7 @@ function renderTabAtual(){
   if(tabAtiva==='admin') renderAdmin();
 }
 function mudarMes(d){
+  limparEdicao();
   const [y,m]=mesAtual.split('-').map(Number);
   mesAtual=new Date(y,m-1+d,15).toISOString().slice(0,7);
   renderTabAtual();
@@ -696,6 +727,7 @@ function abrirMetas(){
   $('biConteudo').innerHTML=html;
 }
 function salvarMetas(){
+  limparEdicao();
   const c=cfg();
   c.metas[mesAtual]=c.metas[mesAtual]||{};
   vendedores().forEach(v=>{
@@ -837,6 +869,7 @@ function salvarLancamento(){
     if(!d) return toast('Descreva a moto captada', true);
     l.descricao=d;
   }
+  limparEdicao();
   queue({file:'lancamentos',op:'upsert',record:l});
   toast(editId?'Lançamento atualizado — aguardando validação':'Salvo! Aguardando validação do supervisor');
   limparForm();
@@ -1306,22 +1339,27 @@ function renderUsuarios(){
   if(!isAdmin()) return;
   const us=usuarios();
   const cont=(r)=>us.filter(u=>u.role===r).length;
-  const linhas=us.map((u,i)=>{
-    const inativo=u.ativo===false;
-    return '<div class="list-item" style="border-left-color:'+(inativo?'#d9534f':u.role==='admin'?'#f59e0b':u.role==='supervisor'?'#2067b3':'#67a816')+'">'+
-      '<div class="info">'+
-        '<div class="t1">'+u.nome+(inativo?' <span class="chip red">inativo</span>':'')+'</div>'+
-        '<div class="t2">'+u.email+'</div>'+
-      '</div>'+
-      '<select onchange="usrSetRole('+i+',this.value)" style="max-width:130px">'+
+  const cor=(u)=>u.ativo===false?'#d9534f':u.role==='admin'?'#f59e0b':u.role==='supervisor'?'#2067b3':'#67a816';
+
+  const cards=us.map((u,i)=>
+    '<div class="card" style="border-left:4px solid '+cor(u)+'">'+
+      '<h2>'+(u.ativo===false?'<span class="chip red">inativo</span> ':'')+u.nome+'</h2>'+
+      '<label>Nome</label><input id="ue_nome_'+i+'" value="'+(u.nome||'')+'">'+
+      '<label>E-mail (é o login da pessoa)</label><input id="ue_email_'+i+'" type="email" value="'+(u.email||'')+'">'+
+      '<label>Perfil de acesso</label>'+
+      '<select id="ue_role_'+i+'">'+
         ['vendedor','supervisor','admin'].map(r=>'<option value="'+r+'"'+(u.role===r?' selected':'')+'>'+
           (r==='vendedor'?'Vendedor':r==='supervisor'?'Supervisor':'Administrador')+'</option>').join('')+
       '</select>'+
-      '<button class="btn sec sm" onclick="usrDefinirSenha('+i+')">Definir senha</button>'+
-      '<button class="btn sec sm" title="Enviar link por e-mail" onclick="usrResetSenha('+i+')">✉️</button>'+
-      '<button class="btn sec sm" onclick="usrToggle('+i+')">'+(inativo?'Reativar':'Desativar')+'</button>'+
-    '</div>';
-  }).join('');
+      '<label>Nova senha <span class="muted">(deixe vazio para não alterar)</span></label>'+
+      '<input id="ue_senha_'+i+'" type="text" placeholder="mínimo 6 caracteres">'+
+      '<button class="btn" onclick="usrSalvar('+i+')">Salvar alterações</button>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
+        '<button class="btn sec sm" onclick="usrToggle('+i+')">'+(u.ativo===false?'Reativar acesso':'Desativar acesso')+'</button>'+
+        '<button class="btn sec sm" onclick="usrResetSenha('+i+')">Enviar link por e-mail</button>'+
+        '<button class="btn danger sm" onclick="usrExcluir('+i+')">Excluir usuário</button>'+
+      '</div>'+
+    '</div>').join('');
 
   $('usuariosArea').innerHTML=
   '<div class="card"><h2>👥 Equipe</h2>'+
@@ -1330,10 +1368,9 @@ function renderUsuarios(){
       '<div class="k"><div class="v">'+cont('supervisor')+'</div><div class="l">Supervisores</div></div>'+
       '<div class="k"><div class="v">'+cont('admin')+'</div><div class="l">Administradores</div></div>'+
     '</div>'+
-    '<h3>Usuários cadastrados</h3>'+
-    (linhas||'<p class="muted">Nenhum usuário ainda.</p>')+
-    '<p class="muted">O papel é salvo assim que você troca no seletor. <b>Definir senha</b> troca a senha na hora e você informa à pessoa. ✉️ manda link por e-mail (pode demorar ou falhar). Desativar bloqueia o acesso sem apagar o histórico.</p>'+
+    '<p class="muted">Altere o que precisar e clique em <b>Salvar alterações</b> no cartão da pessoa. Trocar o nome leva junto os lançamentos e as metas dela.</p>'+
   '</div>'+
+  cards+
   '<div class="card"><h2>➕ Cadastrar usuário</h2>'+
     '<label>Nome completo</label><input id="nuNome" placeholder="Ex.: GABRIEL VIEIRA">'+
     '<label>E-mail</label><input id="nuEmail" type="email" placeholder="nome@bravick.com.br">'+
@@ -1345,26 +1382,56 @@ function renderUsuarios(){
     '<p id="nuMsg" class="muted" style="margin-top:8px"></p>'+
   '</div>';
 }
-function usrSetRole(i,role){
-  const lista=usuarios(); lista[i].role=role;
-  queue({file:'usuarios',op:'full',data:lista});
-  toast(lista[i].nome+' agora é '+(role==='vendedor'?'vendedor':role==='supervisor'?'supervisor':'administrador'));
+async function usrSalvar(i){
+  const u=usuarios()[i];
+  const nome=($('ue_nome_'+i).value||'').trim().toUpperCase();
+  const email=($('ue_email_'+i).value||'').trim().toLowerCase();
+  const role=$('ue_role_'+i).value;
+  const senha=$('ue_senha_'+i).value;
+  if(!nome||nome.length<2) return toast('Nome inválido', true);
+  if(!email||email.indexOf('@')<0) return toast('E-mail inválido', true);
+  if(senha&&senha.length<6) return toast('A senha precisa ter ao menos 6 caracteres', true);
+  limparEdicao();
+  const avisos=[];
+
+  if(nome!==u.nome){
+    const r=await sb.rpc('renomear_usuario',{p_user:u.id,p_nome:nome});
+    if(r.error) return toast('Nome: '+r.error.message, true);
+    avisos.push('nome atualizado (lançamentos e metas também)');
+  }
+  if(email!==(u.email||'').toLowerCase()){
+    const r=await sb.rpc('definir_email',{p_user:u.id,p_email:email});
+    if(r.error) return toast('E-mail: '+r.error.message, true);
+    avisos.push('e-mail atualizado — avise que o login mudou');
+  }
+  if(role!==u.role){
+    const r=await sb.from('perfis').update({role:role}).eq('id',u.id);
+    if(r.error) return toast('Perfil: '+r.error.message, true);
+    avisos.push('perfil atualizado');
+  }
+  if(senha){
+    const r=await sb.rpc('definir_senha',{p_user:u.id,p_senha:senha});
+    if(r.error) return toast('Senha: '+r.error.message, true);
+    avisos.push('senha definida — informe à pessoa');
+  }
+  if(!avisos.length) return toast('Nada foi alterado');
+  await syncAll();
+  renderUsuarios();
+  alert('Alterações salvas:\n\n• '+avisos.join('\n• '));
+}
+async function usrExcluir(i){
+  const u=usuarios()[i];
+  if(!confirm('Excluir '+u.nome+' definitivamente?\n\nO acesso será removido. Os lançamentos já feitos por essa pessoa continuam no sistema, em nome dela.')) return;
+  const r=await sb.rpc('excluir_usuario',{p_user:u.id});
+  if(r.error) return toast('Não foi possível excluir: '+r.error.message, true);
+  toast('Usuário excluído');
+  await syncAll();
   renderUsuarios();
 }
 function usrToggle(i){
   const lista=usuarios(); lista[i].ativo=lista[i].ativo===false;
   queue({file:'usuarios',op:'full',data:lista});
   renderUsuarios();
-}
-async function usrDefinirSenha(i){
-  const u=usuarios()[i];
-  const nova=prompt('Nova senha para '+u.nome+'\n(mínimo 6 caracteres):');
-  if(nova===null) return;
-  if(nova.length<6) return toast('A senha precisa ter ao menos 6 caracteres', true);
-  const r=await sb.rpc('definir_senha',{p_user:u.id,p_senha:nova});
-  if(r.error) return toast('Não foi possível definir: '+r.error.message, true);
-  alert('Senha de '+u.nome+' definida com sucesso.\n\nInforme a ela:\n'+nova+'\n\nPeça para trocar no primeiro acesso pelo ícone 🔑 no topo.');
-  toast('Senha definida!');
 }
 async function usrResetSenha(i){
   const u=usuarios()[i];
