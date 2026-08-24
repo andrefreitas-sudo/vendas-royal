@@ -417,9 +417,11 @@ function protegerRepintura(id){
     configurable:true,
     get(){ return _descHTML.get.call(this); },
     set(v){
-      if(_descHTML.get.call(this)===v) return;      /* nada mudou: não mexe */
+      /* compara com o último texto GRAVADO (ler de volta traz o HTML reformatado) */
+      if(this.__ultimoHTML === v) return;
       const y=window.scrollY;
       _descHTML.set.call(this,v);
+      this.__ultimoHTML = v;
       if(Math.abs(window.scrollY-y)>2) window.scrollTo(0,y);
     }
   });
