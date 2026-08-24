@@ -173,7 +173,7 @@ a{color:var(--blue)}
       <label>Data</label>
       <input type="date" id="fData">
       <div id="formVenda">
-        <label>Nº do pedido <span class="muted">(opcional)</span></label>
+        <label>Nº do pedido <span class="muted" id="fPedidoAviso">(opcional)</span></label>
         <input type="text" id="fPedido" placeholder="Ex.: 12345" inputmode="numeric">
         <label>Nome do cliente</label>
         <input type="text" id="fCliente" placeholder="Nome completo do cliente">
@@ -786,6 +786,8 @@ function renderFormBasics(){
   if(docAtual&&(c.docTabelas||[]).some(x=>x.id===docAtual)) $('fDocTabela').value=docAtual;
 
   $('snPremioInfo').textContent=fmt(c.premioSeminovo);
+  const av=$('fPedidoAviso');
+  if(av) av.textContent = c.pedidoObrigatorio ? '(obrigatório)' : '(opcional)';
 
   if(isSup()){
     $('lancVendSelWrap').classList.remove('hidden');
@@ -869,6 +871,8 @@ function salvarLancamento(){
   if(tipoLanc==='venda'){
     const cli=$('fCliente').value.trim();
     if(!cli) return toast('Informe o nome do cliente', true);
+    if((cfg()||{}).pedidoObrigatorio && !$('fPedido').value.trim())
+      return toast('Informe o nº do pedido', true);
     const vm=num('fValorMoto');
     if(vm<=0) return toast('Informe o valor da moto', true);
     if(!pagamentos.length) return toast('Adicione ao menos um pagamento', true);
@@ -1313,6 +1317,12 @@ function renderAdmin(){
     <label>Comissão motos (%)</label><input type="number" step="0.01" value="${c.pctMoto}" onchange="admSet('pctMoto',this.value)">
     <label>Comissão acessórios (%)</label><input type="number" step="0.01" value="${c.pctAcess}" onchange="admSet('pctAcess',this.value)">
     <label>Prêmio por captação de seminovo (R$)</label><input type="number" step="0.01" value="${c.premioSeminovo}" onchange="admSet('premioSeminovo',this.value)">
+    <h3>Nº do pedido</h3>
+    <p class="muted">Ligue quando a loja passar a exigir o número do pedido em toda venda.</p>
+    <div class="toggle-group">
+      <button class="${c.pedidoObrigatorio?'':'on'}" onclick="admSetPedido(false)">Opcional</button>
+      <button class="${c.pedidoObrigatorio?'on':''}" onclick="admSetPedido(true)">Obrigatório</button>
+    </div>
     <h3>Prêmio Quantidade de Vendas</h3><div id="admFaixasQt"></div>
     <div class="admin-row"><input id="fqMin" class="narrow" type="number" placeholder="Qt mín."><input id="fqPremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasQt','fqMin','fqPremio')">＋</button></div>
     <h3>Prêmio Emplacamento</h3><div id="admFaixasEmpl"></div>
@@ -1549,6 +1559,13 @@ function admAddFaixa(lista,idMin,idPremio){
   saveConfig(); admRenderListas();
 }
 function admEditFaixa(lista,i,campo,v){ cfg()[lista][i][campo]=parseFloat(v)||0; saveConfig(); }
+function admSetPedido(v){
+  cfg().pedidoObrigatorio = !!v;
+  saveConfig();
+  renderAdmin();
+  renderFormBasics();
+  toast(v?'Nº do pedido agora é obrigatório':'Nº do pedido voltou a ser opcional');
+}
 function admSet(campo,v){ cfg()[campo]=parseFloat(v)||0; saveConfig(); renderFormBasics(); }
 function admLimparMes(){
   if(!confirm(`Apagar TODOS os lançamentos de ${nomeMes(mesAtual)}?`)) return;
