@@ -173,6 +173,8 @@ a{color:var(--blue)}
       <label>Data</label>
       <input type="date" id="fData">
       <div id="formVenda">
+        <label>Nº do pedido <span class="muted">(opcional)</span></label>
+        <input type="text" id="fPedido" placeholder="Ex.: 12345" inputmode="numeric">
         <label>Nome do cliente</label>
         <input type="text" id="fCliente" placeholder="Nome completo do cliente">
         <label>Moto vendida</label>
@@ -403,9 +405,33 @@ function mesesParaCarregar(){
    vindas do banco continuam chegando e sendo guardadas, mas a tela NÃO é
    redesenhada — era isso que zerava os campos no meio do preenchimento. */
 let editando=false, editandoDesde=0;
+/* Faz o elemento ignorar repinturas idênticas e preservar a rolagem.
+   Era a reconstrução constante da lista (a cada aviso do banco) que fazia
+   a tela "voltar ao topo" no meio da validação. */
+const _descHTML = Object.getOwnPropertyDescriptor(Element.prototype,'innerHTML');
+function protegerRepintura(id){
+  const el=document.getElementById(id);
+  if(!el || el.__protegido) return;
+  el.__protegido=true;
+  Object.defineProperty(el,'innerHTML',{
+    configurable:true,
+    get(){ return _descHTML.get.call(this); },
+    set(v){
+      if(_descHTML.get.call(this)===v) return;      /* nada mudou: não mexe */
+      const y=window.scrollY;
+      _descHTML.set.call(this,v);
+      if(Math.abs(window.scrollY-y)>2) window.scrollTo(0,y);
+    }
+  });
+}
+function protegerTelas(){
+  ['listaPendentes','listaRejeitados','listaLanc','biConteudo','apuResultado','usuariosArea','adminArea']
+    .forEach(protegerRepintura);
+}
 function marcarEdicao(){ editando=true; editandoDesde=Date.now(); }
 function limparEdicao(){ editando=false; editandoDesde=0; }
 function podeRedesenhar(){
+  if(editId) return false;            /* edição aberta: nunca redesenha */
   if(!editando) return true;
   if(Date.now()-editandoDesde > 300000){ limparEdicao(); return true; } /* 5 min parado libera */
   const el=document.activeElement;
@@ -599,6 +625,7 @@ function entrarApp(){
   const nav=$('navTabs');
   nav.innerHTML=TABS.filter(t=>t.roles.includes(SESSION.role)).map(t=>
     `<button data-tab="${t.id}" onclick="showTab('${t.id}')"><span class="ic">${t.ic}</span>${t.label}</button>`).join('');
+  protegerTelas();
   renderFormBasics();
   limparForm();
   showTab('bi');
@@ -848,7 +875,7 @@ function salvarLancamento(){
     const tot=pagamentos.reduce((s,p)=>s+p.valor,0);
     if(Math.abs(tot-vm)>=0.01) return toast('Pagamentos não conferem com o valor da moto', true);
     if(pagamentos.some(p=>p.tipo==='Financiamento'&&!p.banco)) return toast('Selecione o banco do financiamento', true);
-    l.cliente=cli; l.moto=$('fMoto').value; l.valorMoto=vm;
+    l.cliente=cli; l.pedido=$('fPedido').value.trim(); l.moto=$('fMoto').value; l.valorMoto=vm;
     l.pagamentos=JSON.parse(JSON.stringify(pagamentos));
     l.valorAcess=num('fAcessVenda');
     if(docStatusSel==='feita'){
@@ -879,14 +906,14 @@ function limparForm(){
   editId=null;
   $('btnCancelEdit').classList.add('hidden');
   $('btnSalvar').textContent='💾 Salvar Lançamento';
-  ['fValorMoto','fAcessVenda','fDocValor','fDocMotivo','fAcessDesc','fAcessValor','fSnMoto','fCliente','fClienteAcess'].forEach(id=>$(id).value='');
+  ['fValorMoto','fAcessVenda','fDocValor','fDocMotivo','fAcessDesc','fAcessValor','fSnMoto','fCliente','fClienteAcess','fPedido'].forEach(id=>$(id).value='');
   $('fDocDesc').value='0';
   $('fData').value=new Date().toISOString().slice(0,10);
   setDocStatus('feita');
   pagamentos=[{tipo:'À Vista',banco:'',valor:0}];
   renderPagamentos();
 }
-function cancelarEdicao(){ limparForm(); }
+function cancelarEdicao(){ limparForm(); limparEdicao(); }
 function podeEditar(l){
   if(isSup()) return true;                       /* supervisor e admin: alteram qualquer lançamento */
   return l.vendedor===SESSION.nome && l.status!=='validado';
@@ -902,9 +929,20 @@ function editarLanc(id){
   showTab('lancar');
   setTipoLanc(l.tipo);
   $('fData').value=l.data;
-  if(isSup()) $('lancVendSel').value=l.vendedor;
+  if(isSup()){
+    if(l.vendedor && !Array.from($('lancVendSel').options).some(o=>o.value===l.vendedor)){
+      const op=document.createElement('option'); op.value=l.vendedor; op.textContent=l.vendedor+' (fora da lista atual)';
+      $('lancVendSel').appendChild(op);
+    }
+    $('lancVendSel').value=l.vendedor;
+  }
   if(l.tipo==='venda'){
-    $('fCliente').value=l.cliente||''; $('fMoto').value=l.moto;
+    $('fCliente').value=l.cliente||''; $('fPedido').value=l.pedido||'';
+    if(l.moto && !Array.from($('fMoto').options).some(o=>o.value===l.moto)){
+      const op=document.createElement('option'); op.value=l.moto; op.textContent=l.moto+' (fora da lista atual)';
+      $('fMoto').appendChild(op);
+    }
+    $('fMoto').value=l.moto;
     $('fValorMoto').value=l.valorMoto; $('fAcessVenda').value=l.valorAcess||'';
     pagamentos=JSON.parse(JSON.stringify(l.pagamentos)); renderPagamentos();
     if(l.doc.status==='feita'){ setDocStatus('feita'); $('fDocValor').value=l.doc.valor; $('fDocDesc').value=l.doc.desconto; $('fDocTabela').value=l.doc.tabelaId; }
@@ -913,6 +951,7 @@ function editarLanc(id){
   else $('fSnMoto').value=l.descricao;
   $('btnSalvar').textContent='💾 Atualizar Lançamento';
   $('btnCancelEdit').classList.remove('hidden');
+  marcarEdicao();   /* enquanto a edição estiver aberta, nada redesenha */
 }
 function excluirLanc(id){
   const l=lancAll().find(x=>x.id===id);
@@ -929,7 +968,7 @@ function nomeTabela(id){ const t=(cfg()?.docTabelas||[]).find(x=>x.id===id); ret
 function lancHtml(l,acoes){
   let t1='',t2='';
   if(l.tipo==='venda'){
-    t1=`${l.cliente?l.cliente+' — ':''}${l.moto}${l.versao?' '+l.versao:''} — ${fmt(l.valorMoto)}`;
+    t1=`${l.pedido?'#'+l.pedido+' · ':''}${l.cliente?l.cliente+' — ':''}${l.moto}${l.versao?' '+l.versao:''} — ${fmt(l.valorMoto)}`;
     const pg=l.pagamentos.map(p=>p.tipo==='Financiamento'?`Financ. ${nomeBanco(p.banco)} ${p.retorno||''}`:p.tipo).join(' + ');
     const doc=l.doc.status==='feita'?`Doc ${nomeTabela(l.doc.tabelaId)} ${fmt((l.doc.valor||0)-(l.doc.desconto||0))}`:`🚫 Doc perdida: ${l.doc.motivo}`;
     t2=`${l.vendedor} · ${l.data.slice(8,10)}/${l.data.slice(5,7)} · ${pg}${l.valorAcess?` · Acess ${fmt(l.valorAcess)}`:''} · ${doc}`;
@@ -998,6 +1037,7 @@ function detalheHtml(l,acoes){
     const comAcess=(l.valorAcess||0)*(c.pctAcess||0)/100;
     corpo=`<div class="scroll-x"><table>
       <tr><th>Item</th><th>Valor</th></tr>
+      <tr><td>🧾 Nº do pedido</td><td><b>${l.pedido||'—'}</b></td></tr>
       <tr><td>👤 Cliente</td><td><b>${l.cliente||'—'}</b></td></tr>
       <tr><td>🏍️ ${l.moto}${l.versao?' · '+l.versao:''}</td><td><b>${fmt(l.valorMoto)}</b></td></tr>
       <tr><td class="muted" style="padding-left:18px">Comissão moto (${c.pctMoto}%)</td><td class="muted">${fmt(comMoto)}</td></tr>
@@ -1229,14 +1269,14 @@ function exportarExcel(){
   rows.push([]); rows.push(['DOCUMENTAÇÕES PERDIDAS']); rows.push(['Vendedor','Data','Moto','Motivo']);
   Object.entries(res).forEach(([v,r])=>r.docsPerdidas.forEach(d=>rows.push([v,d.data,d.moto,d.motivo])));
   rows.push([]); rows.push(['LANÇAMENTOS VALIDADOS DO MÊS']);
-  rows.push(['Data','Vendedor','Cliente','Tipo','Moto / Descrição','Valor','Pagamentos','Documentação','Validado por']);
+  rows.push(['Data','Nº pedido','Vendedor','Cliente','Tipo','Moto / Descrição','Valor','Pagamentos','Documentação','Validado por']);
   lancAll().filter(l=>l.mes===mesAtual&&l.status==='validado').sort((a,b)=>a.data.localeCompare(b.data)).forEach(l=>{
     if(l.tipo==='venda'){
-      rows.push([l.data,l.vendedor,l.cliente||'','Venda Moto',l.moto,l.valorMoto,
+      rows.push([l.data,l.pedido||'',l.vendedor,l.cliente||'','Venda Moto',l.moto,l.valorMoto,
         l.pagamentos.map(p=>`${p.tipo==='Financiamento'?'Financ. '+nomeBanco(p.banco)+' '+(p.retorno||''):p.tipo}: ${p.valor}`).join(' | '),
         l.doc.status==='feita'?`${nomeTabela(l.doc.tabelaId)} · cobrado R$${((l.doc.valor||0)-(l.doc.desconto||0)).toFixed(2)} · comissão R$${valorDoc(l.doc.tabelaId).toFixed(2)}`:`PERDIDA: ${l.doc.motivo}`, l.validadoPor||'']);
-    }else if(l.tipo==='acessorio') rows.push([l.data,l.vendedor,l.cliente||'','Acessório',l.descricao||'',l.valor,'','',l.validadoPor||'']);
-    else rows.push([l.data,l.vendedor,'','Captação SN',l.descricao,(cfg()?.premioSeminovo)||0,'','',l.validadoPor||'']);
+    }else if(l.tipo==='acessorio') rows.push([l.data,'',l.vendedor,l.cliente||'','Acessório',l.descricao||'',l.valor,'','',l.validadoPor||'']);
+    else rows.push([l.data,'',l.vendedor,'','Captação SN',l.descricao,(cfg()?.premioSeminovo)||0,'','',l.validadoPor||'']);
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=rows[0].map(()=>({wch:18}));
@@ -1313,10 +1353,10 @@ function exportarJuros(){
   const mes=$('jurosMes').value||mesAtual;
   const itens=lancAll().filter(l=>l.mes===mes&&l.tipo==='venda'&&jurosLanc(l)>0).sort((a,b)=>a.data.localeCompare(b.data));
   const rows=[['EXCEDENTE — JUROS DE CARTÃO — '+nomeMes(mes)],[],
-              ['Data','Cliente','Vendedor','Moto','Valor da moto','Status','Juros (excedente)']];
-  itens.forEach(l=>rows.push([l.data,l.cliente||'',l.vendedor,l.moto||'',l.valorMoto||0,l.status,jurosLanc(l)]));
+              ['Data','Nº pedido','Cliente','Vendedor','Moto','Valor da moto','Status','Juros (excedente)']];
+  itens.forEach(l=>rows.push([l.data,l.pedido||'',l.cliente||'',l.vendedor,l.moto||'',l.valorMoto||0,l.status,jurosLanc(l)]));
   rows.push([]);
-  rows.push(['','','','','','TOTAL',itens.reduce((s,l)=>s+jurosLanc(l),0)]);
+  rows.push(['','','','','','','TOTAL',itens.reduce((s,l)=>s+jurosLanc(l),0)]);
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=rows[2].map(()=>({wch:18}));
   const wb=XLSX.utils.book_new();
