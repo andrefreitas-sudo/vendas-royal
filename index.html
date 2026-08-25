@@ -233,11 +233,37 @@ a{color:var(--blue)}
       <button onclick="mudarMes(1)">›</button>
     </div>
     <div class="card">
-      <h2>Lançamentos</h2>
-      <div id="filtroVendWrap" class="hidden">
-        <label>Filtrar vendedor</label>
-        <select id="filtroVend" onchange="renderLista()"></select>
+      <h2>🔎 Filtros</h2>
+      <label>Buscar</label>
+      <input type="search" id="fbLista" class="filtro" placeholder="Nº do pedido, cliente ou moto" oninput="renderLista()">
+      <div class="row">
+        <div id="filtroVendWrap" class="hidden">
+          <label>Vendedor</label>
+          <select id="filtroVend" class="filtro" onchange="renderLista()"></select>
+        </div>
+        <div>
+          <label>Situação</label>
+          <select id="filtroStatus" class="filtro" onchange="renderLista()">
+            <option value="">Todas</option>
+            <option value="pendente">Pendentes</option>
+            <option value="validado">Validados</option>
+            <option value="rejeitado">Rejeitados</option>
+          </select>
+        </div>
+        <div>
+          <label>Tipo</label>
+          <select id="filtroTipo" class="filtro" onchange="renderLista()">
+            <option value="">Todos</option>
+            <option value="venda">Venda de moto</option>
+            <option value="acessorio">Acessório</option>
+            <option value="seminovo">Seminovo</option>
+          </select>
+        </div>
       </div>
+      <button class="btn sec sm" style="margin-top:10px" onclick="limparFiltros('lista')">Limpar filtros</button>
+    </div>
+    <div class="card">
+      <h2>Lançamentos <span id="contLista" class="muted" style="font-weight:400"></span></h2>
       <div id="listaLanc" style="margin-top:12px"></div>
     </div>
   </section>
@@ -250,7 +276,15 @@ a{color:var(--blue)}
       <button onclick="mudarMes(1)">›</button>
     </div>
     <div class="card">
-      <h2>⏳ Aguardando validação</h2>
+      <h2>🔎 Filtros</h2>
+      <label>Buscar</label>
+      <input type="search" id="fbValidar" class="filtro" placeholder="Nº do pedido, cliente ou moto" oninput="renderValidar()">
+      <label>Vendedor</label>
+      <select id="filtroVendValidar" class="filtro" onchange="renderValidar()"></select>
+      <button class="btn sec sm" style="margin-top:10px" onclick="limparFiltros('validar')">Limpar filtros</button>
+    </div>
+    <div class="card">
+      <h2>⏳ Aguardando validação <span id="contPendentes" class="muted" style="font-weight:400"></span></h2>
       <div id="listaPendentes"></div>
     </div>
     <div class="card">
@@ -277,6 +311,11 @@ a{color:var(--blue)}
       <p class="muted" style="margin-top:6px">DSR = comissão × (domingos+feriados ÷ dias úteis).<br>
       Financiamento: retorno bruto → −ILA → −imposto <span id="infoImposto"></span>% → comissão do vendedor <span id="infoComFin"></span>% do líquido.<br>
       Somente lançamentos <b>validados</b> entram na apuração.</p>
+    </div>
+    <div class="card hidden" id="filtroApuWrap">
+      <h2>🔎 Filtrar</h2>
+      <label>Vendedor</label>
+      <select id="filtroVendApu" class="filtro" onchange="renderApuracao()"></select>
     </div>
     <div id="apuResultado"></div>
     <div class="card" id="exportCard">
@@ -443,10 +482,12 @@ function podeRedesenhar(){
 }
 document.addEventListener('input', function(e){
   const el=e.target;
+  if(el&&el.classList&&el.classList.contains('filtro')) return;   /* filtros não travam a tela */
   if(el&&el.closest&&el.closest('#scrApp')) marcarEdicao();
 }, true);
 document.addEventListener('focusin', function(e){
   const el=e.target, tag=el?(el.tagName||'').toLowerCase():'';
+  if(el&&el.classList&&el.classList.contains('filtro')) return;
   if((tag==='input'||tag==='select'||tag==='textarea')&&el.closest&&el.closest('#scrApp')) marcarEdicao();
 }, true);
 
@@ -652,6 +693,7 @@ function renderTabAtual(){
 }
 function mudarMes(d){
   limparEdicao();
+  ['fbLista','fbValidar'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
   const [y,m]=mesAtual.split('-').map(Number);
   mesAtual=new Date(y,m-1+d,15).toISOString().slice(0,7);
   renderTabAtual();
@@ -969,6 +1011,33 @@ function excluirLanc(id){
 }
 
 /* ================= LISTA ================= */
+/* ---------- BUSCA E FILTROS ---------- */
+function normaliza(s){
+  return String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+function casaBusca(l, termo){
+  if(!termo) return true;
+  const alvo = normaliza([l.pedido,l.cliente,l.moto,l.descricao,l.vendedor].join(' '));
+  /* todas as palavras digitadas precisam aparecer */
+  return normaliza(termo).split(/\s+/).filter(Boolean).every(p=>alvo.indexOf(p)>=0);
+}
+function valorDe(id){ const el=$(id); return el?el.value:''; }
+function preencherSelectVendedores(id){
+  const el=$(id); if(!el) return;
+  const atual=el.value;
+  const lista=nomesApuracao(mesAtual);
+  el.innerHTML='<option value="">Todos</option>'+lista.map(v=>'<option>'+v+'</option>').join('');
+  if(atual && lista.indexOf(atual)>=0) el.value=atual;
+}
+function limparFiltros(tela){
+  if(tela==='lista'){
+    ['fbLista','filtroVend','filtroStatus','filtroTipo'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+    renderLista();
+  }else{
+    ['fbValidar','filtroVendValidar'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+    renderValidar();
+  }
+}
 function nomeBanco(id){ const b=(cfg()?.bancos||[]).find(x=>x.id===id); return b?b.nome:'?'; }
 function nomeTabela(id){ const t=(cfg()?.docTabelas||[]).find(x=>x.id===id); return t?t.nome:'?'; }
 function lancHtml(l,acoes){
@@ -996,17 +1065,32 @@ function renderLista(){
   $('mesLista').textContent=nomeMes(mesAtual);
   if(isSup()){
     $('filtroVendWrap').classList.remove('hidden');
-    const sel=$('filtroVend'); const cur=sel.value;
-    sel.innerHTML='<option value="">Todos</option>'+vendedores().map(v=>`<option ${cur===v?'selected':''}>${v}</option>`).join('');
+    preencherSelectVendedores('filtroVend');
   }
-  const fv=isSup()?$('filtroVend').value:'';
-  const itens=lancVisiveis().filter(l=>l.mes===mesAtual&&(!fv||l.vendedor===fv)).sort((a,b)=>b.data.localeCompare(a.data));
+  const busca=valorDe('fbLista');
+  const fv=isSup()?valorDe('filtroVend'):'';
+  const fs=valorDe('filtroStatus');
+  const ft=valorDe('filtroTipo');
+
+  const doMes=lancVisiveis().filter(l=>l.mes===mesAtual);
+  const itens=doMes.filter(l=>
+      (!fv||l.vendedor===fv) &&
+      (!fs||l.status===fs) &&
+      (!ft||l.tipo===ft) &&
+      casaBusca(l,busca)
+    ).sort((a,b)=>b.data.localeCompare(a.data));
+
+  const cont=$('contLista');
+  if(cont) cont.textContent = (itens.length===doMes.length)
+    ? '('+doMes.length+')'
+    : '('+itens.length+' de '+doMes.length+')';
+
   $('listaLanc').innerHTML=itens.length?itens.map(l=>{
     let acoes='';
     if(podeEditar(l)) acoes+=`<button class="mini" style="color:var(--blue)" onclick="editarLanc('${l.id}')">✏️</button>`;
     if(podeExcluir(l)) acoes+=`<button class="mini" onclick="excluirLanc('${l.id}')">🗑️</button>`;
     return lancHtml(l,acoes);
-  }).join(''):'<p class="muted">Nenhum lançamento neste mês.</p>';
+  }).join(''):'<p class="muted">Nenhum lançamento encontrado com esses filtros.</p>';
 }
 
 /* ================= VALIDAÇÃO ================= */
@@ -1078,20 +1162,34 @@ function detalheHtml(l,acoes){
 }
 function renderValidar(){
   $('mesVal').textContent=nomeMes(mesAtual);
-  const pend=lancAll().filter(l=>l.mes===mesAtual&&l.status==='pendente').sort((a,b)=>a.data.localeCompare(b.data));
+  preencherSelectVendedores('filtroVendValidar');
+  const busca=valorDe('fbValidar');
+  const fv=valorDe('filtroVendValidar');
+  const passa=(l)=> (!fv||l.vendedor===fv) && casaBusca(l,busca);
+
+  const todosPend=lancAll().filter(l=>l.mes===mesAtual&&l.status==='pendente');
+  const pend=todosPend.filter(passa).sort((a,b)=>a.data.localeCompare(b.data));
+
+  const cont=$('contPendentes');
+  if(cont) cont.textContent = (pend.length===todosPend.length)
+    ? '('+todosPend.length+')'
+    : '('+pend.length+' de '+todosPend.length+')';
+
   $('listaPendentes').innerHTML=pend.length?pend.map(l=>detalheHtml(l,
     `<button class="btn ok sm" onclick="validarLanc('${l.id}',true)">✅ Validar</button>
      <button class="btn danger sm" onclick="validarLanc('${l.id}',false)">✖ Rejeitar</button>
      <button class="btn sec sm" onclick="editarLanc('${l.id}')">✏️ Alterar</button>
      ${isAdmin()?`<button class="btn sec sm" onclick="excluirLanc('${l.id}')">🗑️ Excluir</button>`:''}`
-  )).join(''):'<p class="muted">Nada pendente. 🎉</p>';
-  const jaTratados=lancAll().filter(l=>l.mes===mesAtual&&l.status!=='pendente').sort((a,b)=>b.data.localeCompare(a.data));
+  )).join(''):'<p class="muted">'+(todosPend.length?'Nenhum pendente com esses filtros.':'Nada pendente. 🎉')+'</p>';
+
+  const jaTratados=lancAll().filter(l=>l.mes===mesAtual&&l.status!=='pendente')
+    .filter(passa).sort((a,b)=>b.data.localeCompare(a.data));
   $('listaRejeitados').innerHTML=jaTratados.length?jaTratados.map(l=>detalheHtml(l,
     `<button class="btn sec sm" onclick="editarLanc('${l.id}')">✏️ Alterar</button>
      ${l.status==='rejeitado'?`<button class="btn ok sm" onclick="validarLanc('${l.id}',true)">✅ Validar</button>`:''}
      ${l.status==='validado'?`<button class="btn danger sm" onclick="validarLanc('${l.id}',false)">✖ Reverter/Rejeitar</button>`:''}
      ${isAdmin()?`<button class="btn sec sm" onclick="excluirLanc('${l.id}')">🗑️ Excluir</button>`:''}`
-  )).join(''):'<p class="muted">Nenhum lançamento tratado neste mês.</p>';
+  )).join(''):'<p class="muted">Nenhum lançamento tratado com esses filtros.</p>';
 }
 function validarLanc(id,ok){
   const l=lancAll().find(x=>x.id===id); if(!l) return;
@@ -1203,6 +1301,7 @@ function comissaoLanc(l){
 function renderApuracaoVendedor(){
   $('mesApu').textContent=nomeMes(mesAtual);
   $('dsrCard').classList.add('hidden');
+  const fw=$('filtroApuWrap'); if(fw) fw.classList.add('hidden');
   $('exportCard').classList.add('hidden');
   const meus=lancAll().filter(l=>l.mes===mesAtual&&l.status==='validado'&&l.vendedor===SESSION.nome)
     .sort((a,b)=>a.data.localeCompare(b.data));
@@ -1229,6 +1328,8 @@ function renderApuracao(){
   $('dsrCard').classList.remove('hidden');
   $('mesApu').textContent=nomeMes(mesAtual);
   const dsr=getDsrMes();
+  const fw=$('filtroApuWrap');
+  if(fw){ fw.classList.remove('hidden'); preencherSelectVendedores('filtroVendApu'); }
   $('dsrDomFer').value=dsr.domFer; $('dsrUteis').value=dsr.uteis;
   $('ilaMes').value=ilaDoMes(mesAtual);
   $('infoImposto').textContent=impostoFin();
@@ -1237,9 +1338,11 @@ function renderApuracao(){
   $('exportCard').classList.toggle('hidden',!isSup());
   const res=calcularApuracao(mesAtual);
   const c=cfg()||{};
+  const fvApu=valorDe('filtroVendApu');
   let html='', geral=0;
   Object.entries(res).forEach(([v,r])=>{
-    geral+=r.total;
+    geral+=r.total;                                  /* total geral sempre soma todos */
+    if(fvApu && v!==fvApu) return;
     if(r.qtVendas===0&&r.valorAcess===0&&r.qtSN===0) return;
     html+=`<div class="card">
       <h2>👤 ${v}</h2>
