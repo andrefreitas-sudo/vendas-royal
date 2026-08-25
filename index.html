@@ -133,6 +133,7 @@ a{color:var(--blue)}
   <h1>🏍️ Vendas Royal</h1>
   <div class="hright">
     <span id="syncDot" class="dot off" title="status"></span>
+    <button id="filaAviso" class="btn danger sm hidden" style="margin:0;padding:4px 10px;font-size:11px" onclick="verFila()"></button>
     <span id="userNome"></span>
     <button class="iconbtn" title="Sincronizar" onclick="syncAll(true)">🔄</button>
     <button class="iconbtn" title="Trocar senha" onclick="trocarSenha()">🔑</button>
@@ -492,6 +493,24 @@ document.addEventListener('focusin', function(e){
 }, true);
 
 function setDot(cls){ const d=$('syncDot'); if(d){d.className='dot '+cls;} }
+let ultimoErroEnvio=null;
+function itensNaFila(){ return OUTBOX.filter(o=>o.file==='lancamentos').length; }
+function atualizarAvisoFila(){
+  const b=$('filaAviso'); if(!b) return;
+  const n=itensNaFila();
+  b.classList.toggle('hidden', n===0);
+  if(n) b.textContent='⚠ '+n+' não enviado'+(n>1?'s':'');
+}
+function verFila(){
+  const n=itensNaFila();
+  if(!n) return toast('Tudo enviado');
+  const nomes=OUTBOX.filter(o=>o.file==='lancamentos'&&o.record)
+    .map(o=>(o.record.cliente||o.record.descricao||o.record.id)).join('\n• ');
+  const msg='Estes lançamentos ainda NÃO chegaram ao servidor:\n\n• '+nomes+
+    '\n\nMotivo: '+(ultimoErroEnvio||'sem conexão')+
+    '\n\nEles estão salvos neste aparelho. Deseja tentar enviar agora?';
+  if(confirm(msg)) syncAll(true);
+}
 async function flushOutbox(){
   if(!OUTBOX.length) return;
   const lops=OUTBOX.filter(o=>o.file==='lancamentos');
@@ -529,7 +548,8 @@ async function syncAll(manual){
   syncing=true;
   let falhou=false;
 
-  try{ await flushOutbox(); }catch(e){ falhou=true; }
+  try{ await flushOutbox(); ultimoErroEnvio=null; }
+  catch(e){ falhou=true; ultimoErroEnvio=(e&&(e.message||e.details))||'erro ao enviar'; }
 
   try{
     const p=await sb.from('perfis').select('id,nome,email,role,ativo');
@@ -557,7 +577,10 @@ async function syncAll(manual){
   }catch(e){ falhou=true; }
 
   saveLocal();
+  atualizarAvisoFila();
   setDot(falhou?(navigator.onLine?'pend':'off'):(OUTBOX.length?'pend':'on'));
+  if(ultimoErroEnvio && itensNaFila())
+    toast('Não foi possível enviar ao servidor — toque no aviso vermelho', true);
   try{
     if(podeRedesenhar()){
       if(tabAtiva!=='lancar') renderFormBasics();
@@ -569,6 +592,7 @@ async function syncAll(manual){
 }
 function queue(op){
   OUTBOX.push(op); saveLocal(); setDot('pend');
+  atualizarAvisoFila();
   syncAll();
 }
 window.addEventListener('online',()=>syncAll());
@@ -1055,6 +1079,8 @@ function lancHtml(l,acoes){
     t2=`${l.vendedor} · ${l.data.slice(8,10)}/${l.data.slice(5,7)} · Captação seminovo`;
   }
   if(l.status==='rejeitado'&&l.motivoRejeicao) t2+=` · ❌ ${l.motivoRejeicao}`;
+  const naFila=OUTBOX.some(o=>o.file==='lancamentos'&&o.record&&o.record.id===l.id);
+  if(naFila) t2+=' · <span class="chip red">aguardando envio</span>';
   return `<div class="list-item">
     <span class="badge ${l.status}">${l.status}</span>
     <div class="info"><div class="t1">${t1}</div><div class="t2">${t2}</div></div>
