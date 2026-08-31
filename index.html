@@ -432,6 +432,9 @@ function duplicadosDoMes(mes){
   });
   return dup;
 }
+function vendedorValido(l){
+  return !!l && (vendedores().indexOf(l.vendedor)>=0 || vendDiversos().indexOf(l.vendedor)>=0);
+}
 function motivosDup(l){
   if(!l||l.dupOk) return [];
   return duplicadosDoMes(l.mes)[l.id]||[];
@@ -1138,6 +1141,7 @@ function lancHtml(l,acoes){
   const md=motivosDup(l);
   if(md.length) t2+=' · <span class="chip red">⚠️ DUPLICADO: '+md.join(' / ')+'</span>';
   if(ehDiverso(l)) t2+=' · <span class="chip blue">Vendas Diversas · bonif. '+fmt(bonifLanc(l))+'</span>';
+  if(l.status==='pendente'&&!vendedorValido(l)) t2+=' · <span class="chip red">⚠️ definir o vendedor responsável</span>';
   return `<div class="list-item">
     <span class="badge ${l.status}">${l.status}</span>
     <div class="info"><div class="t1">${t1}</div><div class="t2">${t2}</div></div>
@@ -1277,6 +1281,9 @@ function renderValidar(){
 }
 function validarLanc(id,ok){
   const l=lancAll().find(x=>x.id===id); if(!l) return;
+  if(ok&&!vendedorValido(l)){
+    return toast('O vendedor "'+l.vendedor+'" não está cadastrado. Use ✏️ Alterar e escolha o vendedor responsável antes de validar.', true);
+  }
   const md=motivosDup(l);
   if(ok&&md.length){
     return toast('Bloqueado: '+md.join(' / ')+'. Exclua o lançamento repetido antes de validar.', true);
