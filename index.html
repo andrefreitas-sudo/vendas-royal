@@ -394,6 +394,57 @@ function valorDoc(tabelaId){
 }
 function isAdmin(){ return SESSION&&SESSION.role==='admin'; }
 
+/* ================= VENDAS DIVERSAS ================= */
+function vendDiversos(){ return (cfg()&&cfg().vendedoresDiversos)||[]; }
+function bonifCC(){
+  const b=(cfg()&&cfg().bonifCC)||{};
+  return {350:(b['350']!==undefined?b['350']:250), 450:(b['450']!==undefined?b['450']:300), 650:(b['650']!==undefined?b['650']:400)};
+}
+function ehDiverso(l){ return !!(l && (l.diversas===true || vendDiversos().indexOf(l.vendedor)>=0)); }
+function cilindrada(moto){
+  const exc=(cfg()&&cfg().ccExcecoes)||{};
+  if(exc[moto]!==undefined) return parseInt(exc[moto],10)||0;
+  const m=String(moto||'').match(/(350|450|650)/);
+  return m?parseInt(m[1],10):0;
+}
+function bonifLanc(l){
+  if(!l||l.tipo!=='venda') return 0;
+  return bonifCC()[cilindrada(l.moto)]||0;
+}
+/* ================= DUPLICADOS ================= */
+function chaveCliente(nome){
+  return normaliza(nome).replace(/\(.*?\)/g,' ').replace(/[^a-z ]/g,' ').replace(/\s+/g,' ').trim();
+}
+function duplicadosDoMes(mes){
+  const ativos=lancAll().filter(l=>l.mes===mes && l.status!=='rejeitado' && l.tipo==='venda');
+  const porPedido={}, porCliente={}, dup={};
+  ativos.forEach(l=>{
+    const p=normaliza(l.pedido).trim();
+    if(p){ (porPedido[p]=porPedido[p]||[]).push(l); }
+    const c=chaveCliente(l.cliente);
+    if(c){ (porCliente[c]=porCliente[c]||[]).push(l); }
+  });
+  Object.entries(porPedido).forEach(([k,arr])=>{
+    if(arr.length>1) arr.forEach(l=>{ (dup[l.id]=dup[l.id]||[]).push('nº de pedido '+k+' repetido ('+arr.length+'x)'); });
+  });
+  Object.entries(porCliente).forEach(([k,arr])=>{
+    if(arr.length>1) arr.forEach(l=>{ (dup[l.id]=dup[l.id]||[]).push('cliente repetido ('+arr.length+'x)'); });
+  });
+  return dup;
+}
+function motivosDup(l){
+  if(!l||l.dupOk) return [];
+  return duplicadosDoMes(l.mes)[l.id]||[];
+}
+function liberarDup(id){
+  if(!isAdmin()) return toast('Só o administrador pode liberar', true);
+  const l=lancAll().find(x=>x.id===id); if(!l) return;
+  if(!confirm('Confirmar que este lançamento NÃO é duplicado e liberar a validação?')) return;
+  queue({file:'lancamentos',op:'upsert',record:{...l,dupOk:true,updatedAt:Date.now()}});
+  toast('Liberado para validação');
+  renderValidar();
+}
+
 /* lançamentos = cache remoto + operações pendentes (outbox) */
 function lancAll(){
   let arr=(CACHE.lancamentos?CACHE.lancamentos.data:[]).slice();
@@ -860,9 +911,11 @@ function renderFormBasics(){
   if(isSup()){
     $('lancVendSelWrap').classList.remove('hidden');
     const vAtual=$('lancVendSel').value;
-    const lista=vendedores();
-    $('lancVendSel').innerHTML=lista.map(v=>`<option>${v}</option>`).join('');
-    if(vAtual&&lista.indexOf(vAtual)>=0) $('lancVendSel').value=vAtual;
+    const lista=vendedores(), div=vendDiversos();
+    $('lancVendSel').innerHTML=
+      '<optgroup label="Vendedores">'+lista.map(v=>`<option>${v}</option>`).join('')+'</optgroup>'
+      +(div.length?'<optgroup label="Vendas Diversas (bonificação)">'+div.map(v=>`<option>${v}</option>`).join('')+'</optgroup>':'');
+    if(vAtual&&lista.concat(div).indexOf(vAtual)>=0) $('lancVendSel').value=vAtual;
   }
   /* os pagamentos só são redesenhados se o formulário estiver vazio */
   if(!pagamentos.length){ pagamentos=[{tipo:'À Vista',banco:'',retorno:'R0',valor:0,juros:0}]; }
@@ -968,6 +1021,7 @@ function salvarLancamento(){
     if(!d) return toast('Descreva a moto captada', true);
     l.descricao=d;
   }
+  l.diversas = vendDiversos().indexOf(vend)>=0;
   limparEdicao();
   queue({file:'lancamentos',op:'upsert',record:l});
   toast(editId?'Lançamento atualizado — aguardando validação':'Salvo! Aguardando validação do supervisor');
@@ -1081,6 +1135,9 @@ function lancHtml(l,acoes){
   if(l.status==='rejeitado'&&l.motivoRejeicao) t2+=` · ❌ ${l.motivoRejeicao}`;
   const naFila=OUTBOX.some(o=>o.file==='lancamentos'&&o.record&&o.record.id===l.id);
   if(naFila) t2+=' · <span class="chip red">aguardando envio</span>';
+  const md=motivosDup(l);
+  if(md.length) t2+=' · <span class="chip red">⚠️ DUPLICADO: '+md.join(' / ')+'</span>';
+  if(ehDiverso(l)) t2+=' · <span class="chip blue">Vendas Diversas · bonif. '+fmt(bonifLanc(l))+'</span>';
   return `<div class="list-item">
     <span class="badge ${l.status}">${l.status}</span>
     <div class="info"><div class="t1">${t1}</div><div class="t2">${t2}</div></div>
@@ -1202,7 +1259,8 @@ function renderValidar(){
     : '('+pend.length+' de '+todosPend.length+')';
 
   $('listaPendentes').innerHTML=pend.length?pend.map(l=>detalheHtml(l,
-    `<button class="btn ok sm" onclick="validarLanc('${l.id}',true)">✅ Validar</button>
+    `${motivosDup(l).length&&isAdmin()?`<button class="btn sec sm" onclick="liberarDup('${l.id}')">🔓 Não é duplicado</button>`:''}
+     <button class="btn ok sm" onclick="validarLanc('${l.id}',true)">✅ Validar</button>
      <button class="btn danger sm" onclick="validarLanc('${l.id}',false)">✖ Rejeitar</button>
      <button class="btn sec sm" onclick="editarLanc('${l.id}')">✏️ Alterar</button>
      ${isAdmin()?`<button class="btn sec sm" onclick="excluirLanc('${l.id}')">🗑️ Excluir</button>`:''}`
@@ -1219,6 +1277,10 @@ function renderValidar(){
 }
 function validarLanc(id,ok){
   const l=lancAll().find(x=>x.id===id); if(!l) return;
+  const md=motivosDup(l);
+  if(ok&&md.length){
+    return toast('Bloqueado: '+md.join(' / ')+'. Exclua o lançamento repetido antes de validar.', true);
+  }
   const novo={...l,updatedAt:Date.now()};
   if(ok){ novo.status='validado'; novo.validadoPor=SESSION.nome; }
   else{
@@ -1267,13 +1329,14 @@ function calcularApuracao(mes){
   const dsr=(c.dsrMeses||{})[mes]||{domFer:5,uteis:25};
   const fator=dsr.uteis>0?dsr.domFer/dsr.uteis:0;
   const res={};
-  const nomes=isSup()?nomesApuracao(mes):[SESSION.nome];
+  const nomes=(isSup()?nomesApuracao(mes):[SESSION.nome]).filter(n=>vendDiversos().indexOf(n)<0);
   nomes.forEach(v=>{
     res[v]={valorMotos:0,qtVendas:0,comMotos:0,dsrMotos:0,comFin:0,dsrFin:0,valorAcess:0,comAcess:0,dsrAcess:0,
             valorFinanciado:0,finBruto:0,finLiquido:0,
             comDoc:0,qtEmpl:0,qtSN:0,premioQt:0,premioEmpl:0,premioSN:0,docsPerdidas:[],pagFormas:{},total:0};
   });
   lancAll().filter(l=>l.mes===mes&&l.status==='validado').forEach(l=>{
+    if(ehDiverso(l)) return;                       /* vendas diversas têm relatório próprio */
     const r=res[l.vendedor]; if(!r) return;
     if(l.tipo==='venda'){
       r.valorMotos+=l.valorMoto; r.qtVendas++; r.valorAcess+=l.valorAcess||0;
@@ -1306,9 +1369,64 @@ function calcularApuracao(mes){
   });
   return res;
 }
+/* Apuração simplificada das Vendas Diversas: bonificação fixa por cilindrada */
+function apuracaoDiversas(mes){
+  const res={};
+  lancAll().filter(l=>l.mes===mes&&l.status==='validado'&&l.tipo==='venda'&&ehDiverso(l)).forEach(l=>{
+    const r=res[l.vendedor]||(res[l.vendedor]={qt:{350:0,450:0,650:0},semCC:[],valorMotos:0,qtVendas:0,total:0});
+    const cc=cilindrada(l.moto);
+    r.qtVendas++; r.valorMotos+=l.valorMoto||0;
+    if(r.qt[cc]!==undefined) r.qt[cc]++; else r.semCC.push(l.moto);
+    r.total+=bonifLanc(l);
+  });
+  return res;
+}
+function htmlDiversas(mes){
+  const res=apuracaoDiversas(mes);
+  const nomes=Object.keys(res).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  if(!nomes.length) return {html:'',total:0};
+  const b=bonifCC();
+  let total=0, linhas='';
+  nomes.forEach(v=>{
+    const r=res[v]; total+=r.total;
+    linhas+=`<tr><td>${v}</td><td>${r.qt[350]}</td><td>${r.qt[450]}</td><td>${r.qt[650]}</td><td>${r.qtVendas}</td><td>${fmt(r.valorMotos)}</td><td><b>${fmt(r.total)}</b></td></tr>`;
+    if(r.semCC.length) linhas+=`<tr><td colspan="7" class="muted">⚠️ sem cilindrada identificada: ${r.semCC.join(', ')}</td></tr>`;
+  });
+  const html=`<div class="card">
+    <h2>🤝 Vendas Diversas — bonificação</h2>
+    <p class="muted">Bonificação fixa por moto vendida: 350cc ${fmt(b[350])} · 450cc ${fmt(b[450])} · 650cc ${fmt(b[650])}. Não gera comissão, DSR, financiamento nem documentação.</p>
+    <div class="scroll-x"><table>
+      <tr><th>Vendedor</th><th>350cc</th><th>450cc</th><th>650cc</th><th>Motos</th><th>Valor vendido</th><th>A pagar</th></tr>
+      ${linhas}
+      <tr><td colspan="6"><b>TOTAL</b></td><td><b>${fmt(total)}</b></td></tr>
+    </table></div>
+    <button class="btn sec" onclick="exportarDiversas()">📊 Exportar bonificações</button>
+  </div>`;
+  return {html,total};
+}
+function exportarDiversas(){
+  const res=apuracaoDiversas(mesAtual), b=bonifCC();
+  const rows=[['VENDAS DIVERSAS — BONIFICAÇÃO — '+nomeMes(mesAtual)],[],
+              ['Vendedor','Motos 350cc','Motos 450cc','Motos 650cc','Total de motos','Valor vendido','Bonificação a pagar']];
+  let total=0;
+  Object.entries(res).sort((a,b2)=>a[0].localeCompare(b2[0],'pt-BR')).forEach(([v,r])=>{
+    total+=r.total;
+    rows.push([v,r.qt[350],r.qt[450],r.qt[650],r.qtVendas,r.valorMotos,r.total]);
+  });
+  rows.push([]);
+  rows.push(['','','','','','TOTAL',total]);
+  rows.push([]);
+  rows.push(['Bonificação por moto:','350cc',b[350],'450cc',b[450],'650cc',b[650]]);
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=rows[2].map(()=>({wch:20}));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Vendas Diversas');
+  XLSX.writeFile(wb,`Vendas_Diversas_${mesAtual}.xlsx`);
+}
 /* Comissão total gerada por UM lançamento (sem prêmios mensais) */
 function comissaoLanc(l){
   const c=cfg()||{};
+  if(ehDiverso(l)) return bonifLanc(l);
   const dsr=(c.dsrMeses||{})[l.mes]||{domFer:5,uteis:25};
   const fator=dsr.uteis>0?dsr.domFer/dsr.uteis:0;
   if(l.tipo==='seminovo') return c.premioSeminovo||0;
@@ -1390,8 +1508,10 @@ function renderApuracao(){
       ${r.docsPerdidas.length?`<h3 style="color:#c0392b">Docs perdidas (${r.docsPerdidas.length})</h3>`+r.docsPerdidas.map(d=>`<span class="chip red">${d.moto}: ${d.motivo}</span>`).join(''):''}
     </div>`;
   });
+  const dv=htmlDiversas(mesAtual);
+  geral+=dv.total;
   const cab=isSup()?`<div class="card"><h2>💰 Total geral do mês: ${fmt(geral)}</h2></div>`:'';
-  $('apuResultado').innerHTML=cab+(html||'<div class="card"><p class="muted">Sem lançamentos validados neste mês.</p></div>');
+  $('apuResultado').innerHTML=cab+(html||(dv.html?'':'<div class="card"><p class="muted">Sem lançamentos validados neste mês.</p></div>'))+dv.html;
 }
 function exportarExcel(){
   const res=calcularApuracao(mesAtual);
@@ -1458,6 +1578,17 @@ function renderAdmin(){
     <div class="admin-row"><input id="fqMin" class="narrow" type="number" placeholder="Qt mín."><input id="fqPremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasQt','fqMin','fqPremio')">＋</button></div>
     <h3>Prêmio Emplacamento</h3><div id="admFaixasEmpl"></div>
     <div class="admin-row"><input id="feMin" class="narrow" type="number" placeholder="Qt mín."><input id="fePremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasEmpl','feMin','fePremio')">＋</button></div></div>
+  <div class="card"><h2>🤝 Vendas Diversas</h2>
+    <p class="muted">Vendedores sem login. O lançamento é igual ao normal, mas o pagamento é só a bonificação fixa por cilindrada.</p>
+    <div id="admVendDiv"></div>
+    <div class="admin-row"><input id="novoVendDiv" placeholder="Nome completo do vendedor"><button class="btn sm" onclick="admAddVendDiv()">＋</button></div>
+    <h3>Bonificação por moto vendida</h3>
+    <label>350cc (R$)</label><input type="number" step="0.01" value="${bonifCC()[350]}" onchange="admSetBonif(350,this.value)">
+    <label>450cc (R$)</label><input type="number" step="0.01" value="${bonifCC()[450]}" onchange="admSetBonif(450,this.value)">
+    <label>650cc (R$)</label><input type="number" step="0.01" value="${bonifCC()[650]}" onchange="admSetBonif(650,this.value)">
+    <h3>Cilindrada dos modelos</h3>
+    <p class="muted">Lida automaticamente do nome (350/450/650). Só aparecem aqui os modelos que o sistema não conseguiu identificar sozinho.</p>
+    <div id="admCC"></div></div>
   <div class="card"><h2>💳 Excedente — Juros de Cartão</h2>
     <p class="muted">Consulta exclusiva do administrador. Estes valores não entram no valor da moto nem na comissão.</p>
     <label>Mês de referência</label>
@@ -1504,6 +1635,24 @@ function exportarJuros(){
   XLSX.utils.book_append_sheet(wb,ws,'Juros cartão');
   XLSX.writeFile(wb,`Juros_Cartao_${mes}.xlsx`);
 }
+function admAddVendDiv(){
+  const v=$('novoVendDiv').value.trim().toUpperCase(); if(!v) return;
+  const c=cfg(); c.vendedoresDiversos=c.vendedoresDiversos||[];
+  if(c.vendedoresDiversos.indexOf(v)>=0) return toast('Já cadastrado', true);
+  c.vendedoresDiversos.push(v); c.vendedoresDiversos.sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  $('novoVendDiv').value='';
+  saveConfig(); admRenderListas(); renderFormBasics();
+}
+function admSetBonif(cc,v){
+  const c=cfg(); c.bonifCC=Object.assign({},bonifCC(),c.bonifCC||{});
+  c.bonifCC[String(cc)]=parseFloat(v)||0;
+  saveConfig();
+}
+function admSetCC(moto,v){
+  const c=cfg(); c.ccExcecoes=c.ccExcecoes||{};
+  c.ccExcecoes[moto]=parseInt(v,10)||0;
+  saveConfig(); admRenderListas();
+}
 function admRenderListas(){
   const c=cfg();
   $('admMotos').innerHTML=(c.motos||[]).map((m,i)=>`<div class="admin-row"><input value="${m}" onchange="admEditStr('motos',${i},this.value)"><button class="mini" onclick="admRmStr('motos',${i})">🗑️</button></div>`).join('');
@@ -1511,6 +1660,13 @@ function admRenderListas(){
   $('admRetornos').innerHTML=Object.entries(retornos()).map(([r,pc])=>`<div class="admin-row"><span class="muted" style="width:36px">${r}</span><input class="narrow" type="number" step="0.1" value="${pc}" onchange="admEditRetorno('${r}',this.value)"><span class="muted">%</span></div>`).join('');
   $('admDocs').innerHTML=(c.docTabelas||[]).map((t,i)=>`<div class="admin-row"><input value="${t.nome}" onchange="admEditDoc(${i},'nome',this.value)"><span class="muted">R$</span><input class="narrow" type="number" step="0.01" value="${t.valor!==undefined?t.valor:0}" onchange="admEditDoc(${i},'valor',this.value)"><button class="mini" onclick="admRmDoc(${i})">🗑️</button></div>`).join('');
   $('admFaixasQt').innerHTML=(c.faixasQt||[]).map((f,i)=>`<div class="admin-row"><span class="muted">≥</span><input class="narrow" type="number" value="${f.min}" onchange="admEditFaixa('faixasQt',${i},'min',this.value)"><span class="muted">vendas →</span><input type="number" value="${f.premio}" onchange="admEditFaixa('faixasQt',${i},'premio',this.value)"><button class="mini" onclick="admRmStr('faixasQt',${i})">🗑️</button></div>`).join('');
+  const dv=$('admVendDiv');
+  if(dv) dv.innerHTML=(c.vendedoresDiversos||[]).map((v,i)=>`<div class="admin-row"><input value="${v}" onchange="admEditStr('vendedoresDiversos',${i},this.value)"><button class="mini" onclick="admRmStr('vendedoresDiversos',${i})">🗑️</button></div>`).join('')||'<p class="muted">Nenhum vendedor diverso cadastrado.</p>';
+  const acc=$('admCC');
+  if(acc){
+    const semCC=(c.motos||[]).filter(m=>!/(350|450|650)/.test(m));
+    acc.innerHTML=semCC.length?semCC.map(m=>`<div class="admin-row"><span class="muted" style="flex:1">${m}</span><select onchange="admSetCC('${m.replace(/'/g,"\\'")}',this.value)">${[0,350,450,650].map(cc=>`<option value="${cc}" ${cilindrada(m)===cc?'selected':''}>${cc?cc+'cc':'—'}</option>`).join('')}</select></div>`).join(''):'<p class="muted">Todos os modelos têm a cilindrada no nome. Nada a ajustar.</p>';
+  }
   $('admFaixasEmpl').innerHTML=(c.faixasEmpl||[]).map((f,i)=>`<div class="admin-row"><span class="muted">≥</span><input class="narrow" type="number" value="${f.min}" onchange="admEditFaixa('faixasEmpl',${i},'min',this.value)"><span class="muted">docs →</span><input type="number" value="${f.premio}" onchange="admEditFaixa('faixasEmpl',${i},'premio',this.value)"><button class="mini" onclick="admRmStr('faixasEmpl',${i})">🗑️</button></div>`).join('');
 }
 function saveConfig(){ queue({file:'config',op:'full',data:cfg()}); }
