@@ -1048,8 +1048,13 @@ function podeEditar(l){
   return l.vendedor===SESSION.nome && l.status!=='validado';
 }
 function podeExcluir(l){
-  if(isAdmin()) return true;                     /* admin: exclui qualquer coisa */
+  if(isSup()) return true;                       /* supervisor e admin: excluem qualquer lançamento */
   return l.vendedor===SESSION.nome && l.status==='pendente';
+}
+function resumoLanc(l){
+  if(l.tipo==='venda') return (l.pedido?'pedido '+l.pedido+' · ':'')+(l.cliente||'')+' · '+(l.moto||'')+' · '+fmt(l.valorMoto||0);
+  if(l.tipo==='acessorio') return 'Acessório · '+(l.cliente||'')+' · '+fmt(l.valor||0);
+  return 'Captação seminovo · '+(l.descricao||'');
 }
 function editarLanc(id){
   const l=lancAll().find(x=>x.id===id);
@@ -1085,7 +1090,10 @@ function editarLanc(id){
 function excluirLanc(id){
   const l=lancAll().find(x=>x.id===id);
   if(!l||!podeExcluir(l)) return toast('Sem permissão para excluir', true);
-  if(!confirm('Excluir este lançamento?')) return;
+  const aviso='Excluir definitivamente este lançamento?\n\n'
+    +resumoLanc(l)+'\nVendedor: '+l.vendedor+'\nSituação: '+l.status
+    +'\n\nEsta ação não pode ser desfeita.';
+  if(!confirm(aviso)) return;
   queue({file:'lancamentos',op:'delete',id});
   toast('Excluído');
   renderTabAtual();
@@ -1267,7 +1275,7 @@ function renderValidar(){
      <button class="btn ok sm" onclick="validarLanc('${l.id}',true)">✅ Validar</button>
      <button class="btn danger sm" onclick="validarLanc('${l.id}',false)">✖ Rejeitar</button>
      <button class="btn sec sm" onclick="editarLanc('${l.id}')">✏️ Alterar</button>
-     ${isAdmin()?`<button class="btn sec sm" onclick="excluirLanc('${l.id}')">🗑️ Excluir</button>`:''}`
+     ${podeExcluir(l)?`<button class="btn danger sm" onclick="excluirLanc('${l.id}')">🗑️ Excluir</button>`:''}`
   )).join(''):'<p class="muted">'+(todosPend.length?'Nenhum pendente com esses filtros.':'Nada pendente. 🎉')+'</p>';
 
   const jaTratados=lancAll().filter(l=>l.mes===mesAtual&&l.status!=='pendente')
@@ -1276,7 +1284,7 @@ function renderValidar(){
     `<button class="btn sec sm" onclick="editarLanc('${l.id}')">✏️ Alterar</button>
      ${l.status==='rejeitado'?`<button class="btn ok sm" onclick="validarLanc('${l.id}',true)">✅ Validar</button>`:''}
      ${l.status==='validado'?`<button class="btn danger sm" onclick="validarLanc('${l.id}',false)">✖ Reverter/Rejeitar</button>`:''}
-     ${isAdmin()?`<button class="btn sec sm" onclick="excluirLanc('${l.id}')">🗑️ Excluir</button>`:''}`
+     ${podeExcluir(l)?`<button class="btn danger sm" onclick="excluirLanc('${l.id}')">🗑️ Excluir</button>`:''}`
   )).join(''):'<p class="muted">Nenhum lançamento tratado com esses filtros.</p>';
 }
 function validarLanc(id,ok){
