@@ -419,12 +419,15 @@ function isAdmin(){ return SESSION&&SESSION.role==='admin'; }
 
 /* ================= VENDAS DIVERSAS ================= */
 function vendDiversos(){ return (cfg()&&cfg().vendedoresDiversos)||[]; }
+function vendInternos(){ return (cfg()&&cfg().vendasInternas)||['Venda Interna']; }
+/* Venda interna: procedimento da loja, não gera comissão nem bonificação */
+function ehInterna(l){ return !!(l && vendInternos().indexOf(l.vendedor)>=0); }
 function bonifCC(){
   const b=(cfg()&&cfg().bonifCC)||{};
   return {350:(b['350']!==undefined?b['350']:250), 450:(b['450']!==undefined?b['450']:300), 650:(b['650']!==undefined?b['650']:400)};
 }
 function ehDiverso(l){
-  if(!l) return false;
+  if(!l||ehInterna(l)) return false;
   if(vendDiversos().indexOf(l.vendedor)>=0) return true;
   /* marca antiga: só vale se o nome não for de um usuário do sistema */
   return l.diversas===true && !usuarios().some(u=>u.nome===l.vendedor);
@@ -461,7 +464,8 @@ function duplicadosDoMes(mes){
   return dup;
 }
 function vendedorValido(l){
-  return !!l && (vendedores().indexOf(l.vendedor)>=0 || vendDiversos().indexOf(l.vendedor)>=0);
+  return !!l && (vendedores().indexOf(l.vendedor)>=0 || vendDiversos().indexOf(l.vendedor)>=0
+                 || vendInternos().indexOf(l.vendedor)>=0);
 }
 function motivosDup(l){
   if(!l||l.dupOk) return [];
@@ -992,7 +996,7 @@ function renderBI(){
     const rk=Object.entries(s.porVend).sort((a,b)=>b[1].valorMotos-a[1].valorMotos);
     html+=biTabela('🏆 Ranking do mês',
       ['Vendedor','Motos','% das motos','Valor em motos','% do valor','Docs','Perdidas','Acess.','SN'],
-      rk.map(([v,r],i)=>[`${i===0&&r.qtMotos>0?'🥇 ':''}${v}${ehDiverso({vendedor:v})?' <span class="chip blue">diversas</span>':''}`,
+      rk.map(([v,r],i)=>[`${i===0&&r.qtMotos>0?'🥇 ':''}${v}${ehDiverso({vendedor:v})?' <span class="chip blue">diversas</span>':''}${vendInternos().indexOf(v)>=0?' <span class="chip">sem comissão</span>':''}`,
         r.qtMotos,biPct(r.qtMotos,s.qtMotos),fmt(r.valorMotos),biPct(r.valorMotos,s.valorMotos),
         r.qtDocs,r.perdidas||'',fmt(r.valorAcess),r.qtSN||'']),
       ['TOTAL',s.qtMotos,'100%',fmt(s.valorMotos),'100%',s.qtDocs,s.docsPerdidas||'',fmt(s.valorAcess),s.qtSN||'']);
@@ -1102,11 +1106,12 @@ function renderFormBasics(){
   if(isSup()){
     $('lancVendSelWrap').classList.remove('hidden');
     const vAtual=$('lancVendSel').value;
-    const lista=vendedores(), div=vendDiversos();
+    const lista=vendedores(), div=vendDiversos(), int=vendInternos();
     $('lancVendSel').innerHTML=
       '<optgroup label="Vendedores">'+lista.map(v=>`<option>${v}</option>`).join('')+'</optgroup>'
-      +(div.length?'<optgroup label="Vendas Diversas (bonificação)">'+div.map(v=>`<option>${v}</option>`).join('')+'</optgroup>':'');
-    if(vAtual&&lista.concat(div).indexOf(vAtual)>=0) $('lancVendSel').value=vAtual;
+      +(div.length?'<optgroup label="Vendas Diversas (bonificação)">'+div.map(v=>`<option>${v}</option>`).join('')+'</optgroup>':'')
+      +(int.length?'<optgroup label="Sem comissionamento">'+int.map(v=>`<option>${v}</option>`).join('')+'</optgroup>':'');
+    if(vAtual&&lista.concat(div,int).indexOf(vAtual)>=0) $('lancVendSel').value=vAtual;
   }
   /* os pagamentos só são redesenhados se o formulário estiver vazio */
   if(!pagamentos.length){ pagamentos=[{tipo:'À Vista',banco:'',retorno:'R0',valor:0,juros:0}]; }
@@ -1213,6 +1218,7 @@ function salvarLancamento(){
     l.descricao=d;
   }
   l.diversas = vendDiversos().indexOf(vend)>=0;
+  l.interna  = vendInternos().indexOf(vend)>=0;
   limparEdicao();
   queue({file:'lancamentos',op:'upsert',record:l});
   toast(editId?'Lançamento atualizado — aguardando validação':'Salvo! Aguardando validação do supervisor');
@@ -1337,6 +1343,7 @@ function lancHtml(l,acoes){
   const md=motivosDup(l);
   if(md.length) t2+=' · <span class="chip red">⚠️ DUPLICADO: '+md.join(' / ')+'</span>';
   if(ehDiverso(l)) t2+=' · <span class="chip blue">Vendas Diversas · bonif. '+fmt(bonifLanc(l))+'</span>';
+  if(ehInterna(l)) t2+=' · <span class="chip">🏢 Venda interna · sem comissionamento</span>';
   if(l.status==='pendente'&&!vendedorValido(l)) t2+=' · <span class="chip red">⚠️ definir o vendedor responsável</span>';
   return `<div class="list-item">
     <span class="badge ${l.status}">${l.status}</span>
@@ -1532,14 +1539,15 @@ function calcularApuracao(mes){
   const dsr=(c.dsrMeses||{})[mes]||{domFer:5,uteis:25};
   const fator=dsr.uteis>0?dsr.domFer/dsr.uteis:0;
   const res={};
-  const nomes=(isSup()?nomesApuracao(mes):[SESSION.nome]).filter(n=>vendDiversos().indexOf(n)<0);
+  const nomes=(isSup()?nomesApuracao(mes):[SESSION.nome])
+    .filter(n=>vendDiversos().indexOf(n)<0 && vendInternos().indexOf(n)<0);
   nomes.forEach(v=>{
     res[v]={valorMotos:0,qtVendas:0,comMotos:0,dsrMotos:0,comFin:0,dsrFin:0,valorAcess:0,comAcess:0,dsrAcess:0,
             valorFinanciado:0,finBruto:0,finLiquido:0,
             comDoc:0,qtEmpl:0,qtSN:0,premioQt:0,premioEmpl:0,premioSN:0,docsPerdidas:[],pagFormas:{},total:0};
   });
   lancAll().filter(l=>l.mes===mes&&l.status==='validado').forEach(l=>{
-    if(ehDiverso(l)) return;                       /* vendas diversas têm relatório próprio */
+    if(ehDiverso(l)||ehInterna(l)) return;         /* diversas têm relatório próprio; internas não pagam */
     const r=res[l.vendedor]; if(!r) return;
     if(l.tipo==='venda'){
       r.valorMotos+=l.valorMoto; r.qtVendas++; r.valorAcess+=l.valorAcess||0;
@@ -1629,6 +1637,7 @@ function exportarDiversas(){
 /* Comissão total gerada por UM lançamento (sem prêmios mensais) */
 function comissaoLanc(l){
   const c=cfg()||{};
+  if(ehInterna(l)) return 0;
   if(ehDiverso(l)) return bonifLanc(l);
   const dsr=(c.dsrMeses||{})[l.mes]||{domFer:5,uteis:25};
   const fator=dsr.uteis>0?dsr.domFer/dsr.uteis:0;
@@ -1932,6 +1941,10 @@ function renderAdmin(){
     <label>350cc (R$)</label><input type="number" step="0.01" value="${bonifCC()[350]}" onchange="admSetBonif(350,this.value)">
     <label>450cc (R$)</label><input type="number" step="0.01" value="${bonifCC()[450]}" onchange="admSetBonif(450,this.value)">
     <label>650cc (R$)</label><input type="number" step="0.01" value="${bonifCC()[650]}" onchange="admSetBonif(650,this.value)">
+    <h3>Vendas internas (sem comissionamento)</h3>
+    <p class="muted">Use para procedimentos internos da loja. O lançamento é normal, mas não gera comissão nem bonificação para ninguém.</p>
+    <div id="admVendInt"></div>
+    <div class="admin-row"><input id="novoVendInt" placeholder="Ex.: Venda Interna"><button class="btn sm" onclick="admAddVendInt()">＋</button></div>
     <h3>Cilindrada dos modelos</h3>
     <p class="muted">Lida automaticamente do nome (350/450/650). Só aparecem aqui os modelos que o sistema não conseguiu identificar sozinho.</p>
     <div id="admCC"></div></div>
@@ -1989,10 +2002,26 @@ function admAddVendDiv(){
   $('novoVendDiv').value='';
   saveConfig(); admRenderListas(); renderFormBasics();
 }
+function admAddVendInt(){
+  const v=$('novoVendInt').value.trim(); if(!v) return;
+  const c=cfg(); c.vendasInternas=c.vendasInternas||vendInternos().slice();
+  if(c.vendasInternas.indexOf(v)>=0) return toast('Já cadastrado', true);
+  c.vendasInternas.push(v);
+  $('novoVendInt').value='';
+  saveConfig(); admRenderListas(); renderFormBasics();
+}
 function admSetBonif(cc,v){
   const c=cfg(); c.bonifCC=Object.assign({},bonifCC(),c.bonifCC||{});
   c.bonifCC[String(cc)]=parseFloat(v)||0;
   saveConfig();
+}
+function admEditVendInt(i,v){
+  const c=cfg(); c.vendasInternas=c.vendasInternas||vendInternos().slice();
+  c.vendasInternas[i]=v.trim(); saveConfig(); renderFormBasics();
+}
+function admRmVendInt(i){
+  const c=cfg(); c.vendasInternas=c.vendasInternas||vendInternos().slice();
+  c.vendasInternas.splice(i,1); saveConfig(); admRenderListas(); renderFormBasics();
 }
 function admSetCC(moto,v){
   const c=cfg(); c.ccExcecoes=c.ccExcecoes||{};
@@ -2008,6 +2037,8 @@ function admRenderListas(){
   $('admFaixasQt').innerHTML=(c.faixasQt||[]).map((f,i)=>`<div class="admin-row"><span class="muted">≥</span><input class="narrow" type="number" value="${f.min}" onchange="admEditFaixa('faixasQt',${i},'min',this.value)"><span class="muted">vendas →</span><input type="number" value="${f.premio}" onchange="admEditFaixa('faixasQt',${i},'premio',this.value)"><button class="mini" onclick="admRmStr('faixasQt',${i})">🗑️</button></div>`).join('');
   const dv=$('admVendDiv');
   if(dv) dv.innerHTML=(c.vendedoresDiversos||[]).map((v,i)=>`<div class="admin-row"><input value="${v}" onchange="admEditStr('vendedoresDiversos',${i},this.value)"><button class="mini" onclick="admRmStr('vendedoresDiversos',${i})">🗑️</button></div>`).join('')||'<p class="muted">Nenhum vendedor diverso cadastrado.</p>';
+  const dvi=$('admVendInt');
+  if(dvi) dvi.innerHTML=vendInternos().map((v,i)=>`<div class="admin-row"><input value="${v}" onchange="admEditVendInt(${i},this.value)"><button class="mini" onclick="admRmVendInt(${i})">🗑️</button></div>`).join('')||'<p class="muted">Nenhuma venda interna cadastrada.</p>';
   const acc=$('admCC');
   if(acc){
     const semCC=(c.motos||[]).filter(m=>!/(350|450|650)/.test(m));
