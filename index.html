@@ -150,9 +150,32 @@ a{color:var(--blue)}
       <button onclick="mudarMes(1)">›</button>
     </div>
     <div id="biVisaoSel" class="hidden card" style="padding:10px 16px">
-      <label style="margin-top:0">Visão</label>
-      <select id="biVend" onchange="renderBI()"></select>
-      <button class="btn sec sm" id="btnMetas" style="margin-top:10px" onclick="abrirMetas()">🎯 Definir metas do mês</button>
+      <h2>🔎 Filtros do painel</h2>
+      <div class="row">
+        <div id="biVendWrap" class="hidden"><label>Vendedor</label>
+          <select id="biVend" class="filtro" onchange="renderBI()"></select></div>
+        <div><label>Cilindrada</label>
+          <select id="biCC" class="filtro" onchange="renderBI()">
+            <option value="">Todas</option><option value="350">350cc</option>
+            <option value="450">450cc</option><option value="650">650cc</option>
+          </select></div>
+      </div>
+      <div class="row">
+        <div><label>Modelo</label><select id="biModelo" class="filtro" onchange="renderBI()"></select></div>
+        <div><label>Forma de pagamento</label>
+          <select id="biPag" class="filtro" onchange="renderBI()">
+            <option value="">Todas</option><option>À Vista</option><option>Cartão</option>
+            <option>Financiamento</option><option>Consórcio</option>
+          </select></div>
+      </div>
+      <div class="row">
+        <div><label>Banco do financiamento</label><select id="biBanco" class="filtro" onchange="renderBI()"></select></div>
+        <div><label>Documentação</label><select id="biDoc" class="filtro" onchange="renderBI()"></select></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sec sm" onclick="limparFiltrosBi()">Limpar filtros</button>
+        <button class="btn sec sm" id="btnMetas" onclick="abrirMetas()">🎯 Definir metas do mês</button>
+      </div>
     </div>
     <div id="biConteudo"></div>
   </section>
@@ -400,7 +423,12 @@ function bonifCC(){
   const b=(cfg()&&cfg().bonifCC)||{};
   return {350:(b['350']!==undefined?b['350']:250), 450:(b['450']!==undefined?b['450']:300), 650:(b['650']!==undefined?b['650']:400)};
 }
-function ehDiverso(l){ return !!(l && (l.diversas===true || vendDiversos().indexOf(l.vendedor)>=0)); }
+function ehDiverso(l){
+  if(!l) return false;
+  if(vendDiversos().indexOf(l.vendedor)>=0) return true;
+  /* marca antiga: só vale se o nome não for de um usuário do sistema */
+  return l.diversas===true && !usuarios().some(u=>u.nome===l.vendedor);
+}
 function cilindrada(moto){
   const exc=(cfg()&&cfg().ccExcecoes)||{};
   if(exc[moto]!==undefined) return parseInt(exc[moto],10)||0;
@@ -830,31 +858,191 @@ function metasGeral(mes){
   vendedores().forEach(v=>{ const m=metasDe(mes,v); g.qtMotos+=m.qtMotos||0; g.qtDocs+=m.qtDocs||0; g.valorAcess+=m.valorAcess||0; g.qtSN+=m.qtSN||0; });
   return g;
 }
+/* ================= PAINEL (B.I) ================= */
+function biFiltro(id){ const el=$(id); return el?el.value:''; }
+function biFiltrosAtivos(){ return ['biCC','biModelo','biPag','biBanco','biDoc'].some(id=>biFiltro(id)); }
+function limparFiltrosBi(){
+  ['biVend','biCC','biModelo','biPag','biBanco','biDoc'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+  renderBI();
+}
+function preencherFiltrosBi(){
+  const mes=mesAtual;
+  const doMes=lancAll().filter(l=>l.mes===mes&&l.status==='validado'&&(isSup()||l.vendedor===SESSION.nome));
+  const manter=(id,html)=>{ const el=$(id); if(!el) return; const cur=el.value; el.innerHTML=html;
+    if(cur&&Array.from(el.options).some(o=>o.value===cur)) el.value=cur; else el.value=''; };
+  manter('biVend','<option value="">🌐 Todos os vendedores</option>'
+    +nomesApuracao(mes).map(v=>`<option>${v}</option>`).join(''));
+  const modelos=[...new Set(doMes.filter(l=>l.tipo==='venda'&&l.moto).map(l=>l.moto))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  manter('biModelo','<option value="">Todos os modelos</option>'+modelos.map(m=>`<option>${m}</option>`).join(''));
+  manter('biBanco','<option value="">Todos os bancos</option>'
+    +((cfg()&&cfg().bancos)||[]).map(b=>`<option value="${b.id}">${b.nome}</option>`).join(''));
+  manter('biDoc','<option value="">Todas</option><option value="feita">Somente feitas</option>'
+    +'<option value="perdida">Somente perdidas</option>'
+    +((cfg()&&cfg().docTabelas)||[]).map(t=>`<option value="${t.id}">Feita — ${t.nome}</option>`).join(''));
+}
+function biLancs(mes,status){
+  const fv=biFiltro('biVend'), fcc=biFiltro('biCC'), fm=biFiltro('biModelo'),
+        fp=biFiltro('biPag'), fb=biFiltro('biBanco'), fd=biFiltro('biDoc');
+  const soVendas=!!(fcc||fm||fp||fb||fd);
+  return lancAll().filter(l=>{
+    if(l.mes!==mes||l.status!==(status||'validado')) return false;
+    if(!isSup()&&l.vendedor!==SESSION.nome) return false;
+    if(fv&&l.vendedor!==fv) return false;
+    if(soVendas&&l.tipo!=='venda') return false;
+    if(fcc&&String(cilindrada(l.moto))!==fcc) return false;
+    if(fm&&l.moto!==fm) return false;
+    if(fp&&!(l.pagamentos||[]).some(p=>p.tipo===fp)) return false;
+    if(fb&&!(l.pagamentos||[]).some(p=>p.tipo==='Financiamento'&&p.banco===fb)) return false;
+    if(fd){
+      const d=l.doc||{};
+      if(fd==='feita'&&d.status!=='feita') return false;
+      if(fd==='perdida'&&d.status!=='perda') return false;
+      if(fd!=='feita'&&fd!=='perdida'&&!(d.status==='feita'&&d.tabelaId===fd)) return false;
+    }
+    return true;
+  });
+}
+function biStats(ls){
+  const s={qtMotos:0,valorMotos:0,qtDocs:0,docsPerdidas:0,valorDoc:0,valorAcess:0,qtSN:0,
+           valorFin:0,juros:0,porCC:{},porModelo:{},porPag:{},porBanco:{},porTabela:{},
+           perdidas:[],seminovos:[],porVend:{}};
+  const acu=(o,k,q,v)=>{ const x=o[k]||(o[k]={q:0,v:0}); x.q+=q; x.v+=v; };
+  ls.forEach(l=>{
+    const pv=s.porVend[l.vendedor]||(s.porVend[l.vendedor]={qtMotos:0,valorMotos:0,qtDocs:0,perdidas:0,valorAcess:0,qtSN:0,juros:0});
+    if(l.tipo==='venda'){
+      s.qtMotos++; s.valorMotos+=l.valorMoto||0; s.valorAcess+=l.valorAcess||0;
+      pv.qtMotos++; pv.valorMotos+=l.valorMoto||0; pv.valorAcess+=l.valorAcess||0;
+      acu(s.porCC,String(cilindrada(l.moto)||'?'),1,l.valorMoto||0);
+      acu(s.porModelo,l.moto||'?',1,l.valorMoto||0);
+      (l.pagamentos||[]).forEach(p=>{
+        acu(s.porPag,p.tipo,1,p.valor||0);
+        if(p.tipo==='Financiamento'){ s.valorFin+=p.valor||0; acu(s.porBanco,nomeBanco(p.banco)+' · '+(p.retorno||'R0'),1,p.valor||0); }
+        if(p.tipo==='Cartão'){ s.juros+=p.juros||0; pv.juros+=p.juros||0; }
+      });
+      const d=l.doc||{};
+      if(d.status==='feita'){ s.qtDocs++; pv.qtDocs++;
+        const liq=(d.valor||0)-(d.desconto||0); s.valorDoc+=liq;
+        acu(s.porTabela,nomeTabela(d.tabelaId),1,liq);
+      }else if(d.status==='perda'){ s.docsPerdidas++; pv.perdidas++; s.perdidas.push(l); }
+    }else if(l.tipo==='acessorio'){ s.valorAcess+=l.valor||0; pv.valorAcess+=l.valor||0; }
+    else{ s.qtSN++; pv.qtSN++; s.seminovos.push(l); }
+  });
+  return s;
+}
+function biTabela(titulo,cab,linhas,total){
+  if(!linhas.length) return '';
+  return `<div class="card"><h2>${titulo}</h2><div class="scroll-x"><table>
+    <tr>${cab.map(c=>`<th>${c}</th>`).join('')}</tr>
+    ${linhas.map(l=>`<tr>${l.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}
+    ${total?`<tr>${total.map(c=>`<td><b>${c}</b></td>`).join('')}</tr>`:''}
+  </table></div></div>`;
+}
+function biPct(parte,todo){ return todo>0?Math.round(parte/todo*100)+'%':'—'; }
 function renderBI(){
   $('mesBi').textContent=nomeMes(mesAtual);
-  const wrap=$('biVisaoSel');
-  let html='';
-  if(isSup()){
-    wrap.classList.remove('hidden');
-    $('btnMetas').classList.toggle('hidden',!isAdmin()); /* metas: somente administrador */
-    const sel=$('biVend');
-    const cur=sel.value;
-    sel.innerHTML='<option value="">🌐 Visão geral</option>'+nomesApuracao(mesAtual).map(v=>`<option ${cur===v?'selected':''}>${v}</option>`).join('');
-    const escolhido=sel.value;
-    if(escolhido){ html=biCard('👤 '+escolhido,mesAtual,escolhido); }
-    else{
-      html=biCard('🌐 Resultado geral da loja',mesAtual,null);
-      /* ranking */
-      const rows=nomesApuracao(mesAtual).map(v=>{const s=statsDe(mesAtual,v);return {v,...s};}).sort((a,b)=>b.valorMotos-a.valorMotos);
-      html+=`<div class="card"><h2>🏆 Ranking do mês</h2><div class="scroll-x"><table>
-        <tr><th>Vendedor</th><th>Motos</th><th>Valor</th><th>Docs</th><th>Acess.</th><th>SN</th><th>Pend.</th></tr>
-        ${rows.map((r,i)=>`<tr><td>${i===0&&r.qtMotos>0?'🥇 ':''}${r.v}</td><td>${r.qtMotos}</td><td>${fmt(r.valorMotos)}</td><td>${r.qtDocs}</td><td>${fmt(r.valorAcess)}</td><td>${r.qtSN}</td><td>${r.pendentes||''}</td></tr>`).join('')}
-      </table></div></div>`;
-    }
-  }else{
-    wrap.classList.add('hidden');
-    html=biCard('👤 Meus resultados — '+SESSION.nome,mesAtual,SESSION.nome);
+  const wrap=$('biVisaoSel'); if(wrap) wrap.classList.remove('hidden');
+  const vw=$('biVendWrap'); if(vw) vw.classList.toggle('hidden',!isSup());
+  const bm=$('btnMetas'); if(bm) bm.classList.toggle('hidden',!isAdmin());
+  preencherFiltrosBi();
+
+  const ls=biLancs(mesAtual);
+  const s=biStats(ls);
+  const pend=biLancs(mesAtual,'pendente').length;
+  const fv=biFiltro('biVend');
+  const alvo=isSup()?(fv||null):SESSION.nome;
+  const titulo=alvo?('👤 '+alvo):'🌐 Resultado geral da loja';
+  const ticket=s.qtMotos>0?s.valorMotos/s.qtMotos:0;
+  const aprov=(s.qtDocs+s.docsPerdidas)>0?Math.round(s.qtDocs/(s.qtDocs+s.docsPerdidas)*100)+'%':'—';
+  const filtrado=biFiltrosAtivos();
+
+  let html=`<div class="card">
+    <h2>${titulo} — ${nomeMes(mesAtual)}</h2>
+    ${filtrado?'<p class="muted">🔎 Números abaixo consideram apenas os filtros aplicados.</p>':''}
+    <div class="bigkpi">
+      <div class="k"><div class="v">${s.qtMotos}</div><div class="l">Motos vendidas</div></div>
+      <div class="k"><div class="v">${fmt(s.valorMotos)}</div><div class="l">Valor em motos</div></div>
+      <div class="k"><div class="v">${fmt(ticket)}</div><div class="l">Ticket médio</div></div>
+    </div>
+    <div class="bigkpi">
+      <div class="k"><div class="v">${s.qtDocs}</div><div class="l">Documentações feitas</div></div>
+      <div class="k"><div class="v">${aprov}</div><div class="l">Aproveitamento doc.</div></div>
+      <div class="k"><div class="v">${fmt(s.valorAcess)}</div><div class="l">Acessórios</div></div>
+    </div>
+    <div class="bigkpi">
+      <div class="k"><div class="v">${s.qtSN}</div><div class="l">Seminovos de entrada</div></div>
+      <div class="k"><div class="v">${fmt(s.valorFin)}</div><div class="l">Valor financiado</div></div>
+      ${isAdmin()?`<div class="k"><div class="v">${fmt(s.juros)}</div><div class="l">Juros de cartão (excedente)</div></div>`
+                 :`<div class="k"><div class="v">${fmt(s.valorDoc)}</div><div class="l">Documentação cobrada</div></div>`}
+    </div>
+    ${pend?`<p class="muted">⏳ ${pend} lançamento(s) aguardando validação — não computados.</p>`:''}
+  </div>`;
+
+  /* metas: só fazem sentido sem filtros que recortem o mês */
+  if(!filtrado){
+    const m=alvo?metasDe(mesAtual,alvo):metasGeral(mesAtual);
+    html+=`<div class="card"><h2>🎯 Metas de ${nomeMes(mesAtual)}</h2>
+      <div class="meta-item"><div class="ml"><span>Motos vendidas</span></div>${pbarHtml(s.qtMotos,m.qtMotos||0)}</div>
+      <div class="meta-item"><div class="ml"><span>Documentações</span></div>${pbarHtml(s.qtDocs,m.qtDocs||0)}</div>
+      <div class="meta-item"><div class="ml"><span>Acessórios (R$)</span></div>${pbarHtml(s.valorAcess,m.valorAcess||0,fmt)}</div>
+      <div class="meta-item"><div class="ml"><span>Seminovos captados</span></div>${pbarHtml(s.qtSN,m.qtSN||0)}</div>
+    </div>`;
   }
+
+  if(isSup()&&!fv){
+    const rk=Object.entries(s.porVend).sort((a,b)=>b[1].valorMotos-a[1].valorMotos);
+    html+=biTabela('🏆 Ranking do mês',
+      ['Vendedor','Motos','% das motos','Valor em motos','% do valor','Docs','Perdidas','Acess.','SN'],
+      rk.map(([v,r],i)=>[`${i===0&&r.qtMotos>0?'🥇 ':''}${v}${ehDiverso({vendedor:v})?' <span class="chip blue">diversas</span>':''}`,
+        r.qtMotos,biPct(r.qtMotos,s.qtMotos),fmt(r.valorMotos),biPct(r.valorMotos,s.valorMotos),
+        r.qtDocs,r.perdidas||'',fmt(r.valorAcess),r.qtSN||'']),
+      ['TOTAL',s.qtMotos,'100%',fmt(s.valorMotos),'100%',s.qtDocs,s.docsPerdidas||'',fmt(s.valorAcess),s.qtSN||'']);
+  }
+
+  const ccOrd=['350','450','650','?'].filter(k=>s.porCC[k]);
+  html+=biTabela('🏍️ Mix por cilindrada',['Cilindrada','Motos','% das motos','Valor','% do valor','Ticket médio'],
+    ccOrd.map(k=>[k==='?'?'Não identificada':k+'cc',s.porCC[k].q,biPct(s.porCC[k].q,s.qtMotos),
+      fmt(s.porCC[k].v),biPct(s.porCC[k].v,s.valorMotos),fmt(s.porCC[k].v/s.porCC[k].q)]),
+    ['TOTAL',s.qtMotos,'100%',fmt(s.valorMotos),'100%',fmt(ticket)]);
+
+  const mod=Object.entries(s.porModelo).sort((a,b)=>b[1].q-a[1].q||b[1].v-a[1].v);
+  html+=biTabela('📊 Modelos vendidos',['Modelo','Cilindrada','Motos','% das motos','Valor','Ticket médio'],
+    mod.map(([m,r])=>[m,(cilindrada(m)||'—')+(cilindrada(m)?'cc':''),r.q,biPct(r.q,s.qtMotos),fmt(r.v),fmt(r.v/r.q)]),
+    ['TOTAL','',s.qtMotos,'100%',fmt(s.valorMotos),fmt(ticket)]);
+
+  const pag=Object.entries(s.porPag).sort((a,b)=>b[1].v-a[1].v);
+  const totPag=pag.reduce((t,[,r])=>t+r.v,0);
+  html+=biTabela('💳 Formas de pagamento',['Forma','Ocorrências','Valor','% do valor'],
+    pag.map(([k,r])=>[k,r.q,fmt(r.v),biPct(r.v,totPag)]),
+    ['TOTAL',pag.reduce((t,[,r])=>t+r.q,0),fmt(totPag),'100%']);
+
+  const bcs=Object.entries(s.porBanco).sort((a,b)=>b[1].v-a[1].v);
+  html+=biTabela('🏦 Financiamentos por banco e retorno',['Banco · Retorno','Contratos','Valor financiado','% do financiado'],
+    bcs.map(([k,r])=>[k,r.q,fmt(r.v),biPct(r.v,s.valorFin)]),
+    ['TOTAL',bcs.reduce((t,[,r])=>t+r.q,0),fmt(s.valorFin),'100%']);
+
+  const tb=Object.entries(s.porTabela).sort((a,b)=>b[1].q-a[1].q);
+  html+=biTabela('📄 Documentações por tabela',['Tabela','Quantidade','% das feitas','Valor cobrado'],
+    tb.map(([k,r])=>[k,r.q,biPct(r.q,s.qtDocs),fmt(r.v)]),
+    ['TOTAL',s.qtDocs,'100%',fmt(s.valorDoc)]);
+
+  if(s.perdidas.length)
+    html+=biTabela('🚫 Documentações perdidas ('+s.perdidas.length+')',['Data','Vendedor','Cliente','Moto','Motivo'],
+      s.perdidas.sort((a,b)=>a.data.localeCompare(b.data)).map(l=>
+        [l.data.split('-').reverse().join('/'),l.vendedor,l.cliente||'—',l.moto||'—',(l.doc&&l.doc.motivo)||'—']));
+
+  if(s.seminovos.length)
+    html+=biTabela('♻️ Motos seminovas de entrada ('+s.seminovos.length+')',['Data','Vendedor','Moto captada'],
+      s.seminovos.sort((a,b)=>a.data.localeCompare(b.data)).map(l=>
+        [l.data.split('-').reverse().join('/'),l.vendedor,l.descricao||'—']));
+
+  if(isAdmin()&&s.juros>0){
+    const jv=Object.entries(s.porVend).filter(([,r])=>r.juros>0).sort((a,b)=>b[1].juros-a[1].juros);
+    html+=biTabela('💳 Valor excedente — juros de cartão',['Vendedor','Juros','% do total'],
+      jv.map(([v,r])=>[v,fmt(r.juros),biPct(r.juros,s.juros)]),
+      ['TOTAL',fmt(s.juros),'100%']);
+  }
+
+  if(!ls.length) html+='<div class="card"><p class="muted">Nenhum lançamento validado com esses filtros.</p></div>';
   $('biConteudo').innerHTML=html;
 }
 function abrirMetas(){
@@ -1528,31 +1716,174 @@ function renderApuracao(){
   const cab=isSup()?`<div class="card"><h2>💰 Total geral do mês: ${fmt(geral)}</h2></div>`:'';
   $('apuResultado').innerHTML=cab+(html||(dv.html?'':'<div class="card"><p class="muted">Sem lançamentos validados neste mês.</p></div>'))+dv.html;
 }
-function exportarExcel(){
-  const res=calcularApuracao(mesAtual);
-  const rows=[['Vendedor','Valor de Venda Motos','Comissão Motos','DSR Motos','Valor Financiado','Retorno Bruto','Retorno Líquido','Comissão Financiamentos','DSR Financiamentos','Comissão Acess.','DSR Acess.','Comissão Doc.','Prêmio Qt Vendas','Prêmio Emplacamento','Prêmio Moto SN','TOTAL']];
-  Object.entries(res).forEach(([v,r])=>{
-    rows.push([v,r.valorMotos,r.comMotos,r.dsrMotos,r.valorFinanciado,r.finBruto,r.finLiquido,r.comFin,r.dsrFin,r.comAcess,r.dsrAcess,r.comDoc,r.premioQt,r.premioEmpl,r.premioSN,r.total]);
-  });
-  rows.push([]);
-  rows.push(['Parâmetros do mês:','ILA %',ilaDoMes(mesAtual),'Imposto %',impostoFin(),'Comissão vend. financ. %',pctComVendFin()]);
-  rows.push([]); rows.push(['DOCUMENTAÇÕES PERDIDAS']); rows.push(['Vendedor','Data','Moto','Motivo']);
-  Object.entries(res).forEach(([v,r])=>r.docsPerdidas.forEach(d=>rows.push([v,d.data,d.moto,d.motivo])));
-  rows.push([]); rows.push(['LANÇAMENTOS VALIDADOS DO MÊS']);
-  rows.push(['Data','Nº pedido','Vendedor','Cliente','Tipo','Moto / Descrição','Valor','Pagamentos','Documentação','Validado por']);
-  lancAll().filter(l=>l.mes===mesAtual&&l.status==='validado').sort((a,b)=>a.data.localeCompare(b.data)).forEach(l=>{
-    if(l.tipo==='venda'){
-      rows.push([l.data,l.pedido||'',l.vendedor,l.cliente||'','Venda Moto',l.moto,l.valorMoto,
-        l.pagamentos.map(p=>`${p.tipo==='Financiamento'?'Financ. '+nomeBanco(p.banco)+' '+(p.retorno||''):p.tipo}: ${p.valor}`).join(' | '),
-        l.doc.status==='feita'?`${nomeTabela(l.doc.tabelaId)} · cobrado R$${((l.doc.valor||0)-(l.doc.desconto||0)).toFixed(2)} · comissão R$${valorDoc(l.doc.tabelaId).toFixed(2)}`:`PERDIDA: ${l.doc.motivo}`, l.validadoPor||'']);
-    }else if(l.tipo==='acessorio') rows.push([l.data,'',l.vendedor,l.cliente||'','Acessório',l.descricao||'',l.valor,'','',l.validadoPor||'']);
-    else rows.push([l.data,'',l.vendedor,'','Captação SN',l.descricao,(cfg()?.premioSeminovo)||0,'','',l.validadoPor||'']);
-  });
+const XLS_MOEDA='R$ #,##0.00';
+function xlsWs(rows,opt){
+  opt=opt||{};
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=rows[0].map(()=>({wch:18}));
+  const rg=XLSX.utils.decode_range(ws['!ref']);
+  const ini=opt.cab!==undefined?opt.cab:0;
+  (opt.moeda||[]).forEach(c=>{
+    for(let r=ini;r<=rg.e.r;r++){
+      const a=XLSX.utils.encode_cell({r,c});
+      if(ws[a]&&ws[a].t==='n') ws[a].z=XLS_MOEDA;
+    }
+  });
+  (opt.moedaRC||[]).forEach(([r,c])=>{
+    const a=XLSX.utils.encode_cell({r,c});
+    if(ws[a]&&ws[a].t==='n') ws[a].z=XLS_MOEDA;
+  });
+  ws['!cols']=(opt.larg||[]).map(w=>({wch:w}));
+  if(opt.autofiltro&&opt.cab!==undefined&&rg.e.r>=opt.cab)
+    ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:opt.cab-1,c:0},e:{r:rg.e.r,c:rg.e.c}})};
+  if(opt.merges) ws['!merges']=opt.merges;
+  return ws;
+}
+function dataBR(d){ return d?d.split('-').reverse().join('/'):''; }
+function cabecalho(titulo,cols){
+  return [[titulo],['Loja: Royal Enfield · Competência: '+nomeMes(mesAtual)],
+          ['Emitido em '+new Date().toLocaleString('pt-BR')+' por '+(SESSION?SESSION.nome:'')],[]];
+}
+function exportarExcel(){
+  const mes=mesAtual;
+  const res=calcularApuracao(mes);
+  const dv=apuracaoDiversas(mes);
+  const val=lancAll().filter(l=>l.mes===mes&&l.status==='validado');
+  const st=biStats(val);
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Apuração');
-  XLSX.writeFile(wb,`Apuracao_${mesAtual}.xlsx`);
+
+  /* ---------- 1. RESUMO ---------- */
+  const totCom=Object.values(res).reduce((t,r)=>t+r.total,0);
+  const totBonif=Object.values(dv).reduce((t,r)=>t+r.total,0);
+  const dsr=(cfg()&&(cfg().dsrMeses||{})[mes])||{domFer:5,uteis:25};
+  let R=cabecalho('APURAÇÃO DE COMISSIONAMENTO');
+  const rc=[];
+  const add=(rotulo,valor,ehMoeda,col)=>{ if(ehMoeda) rc.push([R.length,col===undefined?1:col]); R.push([rotulo,valor]); };
+  R.push(['INDICADORES DA LOJA']);
+  R.push(['Indicador','Valor']);
+  add('Motos vendidas',st.qtMotos,false);
+  add('Valor total em motos',st.valorMotos,true);
+  add('Ticket médio',st.qtMotos?st.valorMotos/st.qtMotos:0,true);
+  add('Valor financiado',st.valorFin,true);
+  add('Acessórios vendidos',st.valorAcess,true);
+  add('Documentações feitas',st.qtDocs,false);
+  add('Documentações perdidas',st.docsPerdidas,false);
+  add('Aproveitamento de documentação',(st.qtDocs+st.docsPerdidas)?Math.round(st.qtDocs/(st.qtDocs+st.docsPerdidas)*100)+'%':'—',false);
+  add('Seminovos de entrada',st.qtSN,false);
+  if(isAdmin()) add('Juros de cartão (excedente, fora da comissão)',st.juros,true);
+  R.push([]);
+  R.push(['TOTAL A PAGAR']);
+  R.push(['Origem','Valor']);
+  add('Comissionamento (vendedores)',totCom,true);
+  add('Bonificação (Vendas Diversas)',totBonif,true);
+  add('TOTAL GERAL',totCom+totBonif,true);
+  R.push([]);
+  R.push(['MIX POR CILINDRADA']);
+  R.push(['Cilindrada','Motos','Valor','% do valor']);
+  ['350','450','650','?'].filter(k=>st.porCC[k]).forEach(k=>{
+    rc.push([R.length,2]);
+    R.push([(k==='?'?'Não identificada':k+'cc'),st.porCC[k].q,st.porCC[k].v,
+            st.valorMotos?Math.round(st.porCC[k].v/st.valorMotos*100)+'%':'—']);
+  });
+  R.push([]);
+  R.push(['FORMAS DE PAGAMENTO']);
+  R.push(['Forma','Ocorrências','Valor']);
+  Object.entries(st.porPag).sort((a,b)=>b[1].v-a[1].v).forEach(([k,r])=>{
+    rc.push([R.length,2]); R.push([k,r.q,r.v]);
+  });
+  XLSX.utils.book_append_sheet(wb,xlsWs(R,{moedaRC:rc,larg:[46,16,16,14]}),'Resumo');
+
+  /* ---------- 2. APURAÇÃO POR VENDEDOR ---------- */
+  const cabA=['Vendedor','Valor de Venda Motos','Comissão Motos','DSR Motos','Valor Financiado','Retorno Bruto','Retorno Líquido','Comissão Financiamentos','DSR Financiamentos','Comissão Acess.','DSR Acess.','Comissão Doc.','Prêmio Qt Vendas','Prêmio Emplacamento','Prêmio Moto SN','TOTAL'];
+  let A=cabecalho('APURAÇÃO POR VENDEDOR');
+  A.push(cabA);
+  const soma=new Array(cabA.length-1).fill(0);
+  Object.entries(res).filter(([,r])=>r.total!==0||r.qtVendas||r.valorAcess||r.qtSN)
+    .sort((a,b)=>b[1].total-a[1].total).forEach(([v,r])=>{
+    const linha=[r.valorMotos,r.comMotos,r.dsrMotos,r.valorFinanciado,r.finBruto,r.finLiquido,r.comFin,r.dsrFin,r.comAcess,r.dsrAcess,r.comDoc,r.premioQt,r.premioEmpl,r.premioSN,r.total];
+    linha.forEach((x,i)=>soma[i]+=x);
+    A.push([v,...linha]);
+  });
+  A.push(['TOTAL',...soma]);
+  XLSX.utils.book_append_sheet(wb,xlsWs(A,{cab:5,moeda:[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+    larg:[26,20,16,14,18,16,16,20,18,16,14,16,16,18,16,18],autofiltro:true}),'Apuração');
+
+  /* ---------- 3. VENDAS DIVERSAS ---------- */
+  const b=bonifCC();
+  let D=cabecalho('VENDAS DIVERSAS — BONIFICAÇÃO');
+  D.push(['Bonificação por moto vendida:','350cc',b[350],'450cc',b[450],'650cc',b[650]]);
+  D.push([]);
+  D.push(['Vendedor','Motos 350cc','Motos 450cc','Motos 650cc','Total de motos','Valor vendido','Bonificação a pagar']);
+  let dTot=[0,0,0,0,0,0];
+  Object.entries(dv).sort((a,b2)=>a[0].localeCompare(b2[0],'pt-BR')).forEach(([v,r])=>{
+    const l=[r.qt[350],r.qt[450],r.qt[650],r.qtVendas,r.valorMotos,r.total];
+    l.forEach((x,i)=>dTot[i]+=x);
+    D.push([v,...l]);
+  });
+  D.push(['TOTAL',...dTot]);
+  XLSX.utils.book_append_sheet(wb,xlsWs(D,{cab:7,moeda:[5,6],larg:[28,14,14,14,16,18,20],autofiltro:true}),'Vendas Diversas');
+
+  /* ---------- 4. LANÇAMENTOS ---------- */
+  let L=cabecalho('LANÇAMENTOS VALIDADOS');
+  L.push(['Data','Nº pedido','Vendedor','Tipo','Cliente','Moto / Descrição','Cilindrada','Valor','Acessórios','Pagamentos','Documentação','Tabela','Valor doc. cobrado','Juros cartão','Validado por']);
+  val.slice().sort((a,b2)=>a.data.localeCompare(b2.data)).forEach(l=>{
+    if(l.tipo==='venda'){
+      const d=l.doc||{};
+      L.push([dataBR(l.data),l.pedido||'',l.vendedor,ehDiverso(l)?'Venda (Diversas)':'Venda de moto',l.cliente||'',l.moto||'',cilindrada(l.moto)||'',
+        l.valorMoto||0,l.valorAcess||0,
+        (l.pagamentos||[]).map(p=>(p.tipo==='Financiamento'?'Financ. '+nomeBanco(p.banco)+' '+(p.retorno||'R0'):p.tipo)+': '+(p.valor||0).toFixed(2)).join(' | '),
+        d.status==='feita'?'Feita':'PERDIDA: '+(d.motivo||''),
+        d.status==='feita'?nomeTabela(d.tabelaId):'',
+        d.status==='feita'?((d.valor||0)-(d.desconto||0)):'',
+        jurosLanc(l)||'', l.validadoPor||'']);
+    }else if(l.tipo==='acessorio'){
+      L.push([dataBR(l.data),'',l.vendedor,'Acessório',l.cliente||'',l.descricao||'','','',l.valor||0,'','','','','',l.validadoPor||'']);
+    }else{
+      L.push([dataBR(l.data),'',l.vendedor,'Seminovo de entrada','',l.descricao||'','','','','','','','','',l.validadoPor||'']);
+    }
+  });
+  XLSX.utils.book_append_sheet(wb,xlsWs(L,{cab:5,moeda:[7,8,12,13],
+    larg:[11,11,26,20,32,34,11,15,13,44,26,14,18,14,20],autofiltro:true}),'Lançamentos');
+
+  /* ---------- 5. DOCUMENTAÇÃO ---------- */
+  let C=cabecalho('DOCUMENTAÇÃO');
+  C.push(['FEITAS POR TABELA']);
+  C.push(['Tabela','Quantidade','Valor cobrado']);
+  Object.entries(st.porTabela).sort((a,b2)=>b2[1].q-a[1].q).forEach(([k,r])=>C.push([k,r.q,r.v]));
+  C.push(['TOTAL',st.qtDocs,st.valorDoc]);
+  C.push([]);
+  C.push(['PERDIDAS ('+st.docsPerdidas+')']);
+  C.push(['Data','Vendedor','Cliente','Moto','Motivo']);
+  st.perdidas.slice().sort((a,b2)=>a.data.localeCompare(b2.data)).forEach(l=>
+    C.push([dataBR(l.data),l.vendedor,l.cliente||'',l.moto||'',(l.doc&&l.doc.motivo)||'']));
+  XLSX.utils.book_append_sheet(wb,xlsWs(C,{cab:6,moeda:[2],larg:[20,26,32,34,48]}),'Documentação');
+
+  /* ---------- 6. PARÂMETROS ---------- */
+  let P=cabecalho('PARÂMETROS USADOS NO CÁLCULO');
+  P.push(['Parâmetro','Valor']);
+  P.push(['Comissão sobre motos (%)',(cfg()&&cfg().pctMoto)||0]);
+  P.push(['Comissão sobre acessórios (%)',(cfg()&&cfg().pctAcess)||0]);
+  P.push(['ILA do mês (%)',ilaDoMes(mes)]);
+  P.push(['Imposto sobre financiamento (%)',impostoFin()]);
+  P.push(['Comissão do vendedor sobre o líquido do financiamento (%)',pctComVendFin()]);
+  P.push(['DSR — domingos + feriados',dsr.domFer]);
+  P.push(['DSR — dias úteis',dsr.uteis]);
+  P.push(['DSR — fator aplicado',dsr.uteis>0?(dsr.domFer/dsr.uteis):0]);
+  P.push(['Prêmio por captação de seminovo (R$)',(cfg()&&cfg().premioSeminovo)||0]);
+  P.push([]);
+  P.push(['RETORNOS DE FINANCIAMENTO']);
+  P.push(['Código','% sobre o valor financiado']);
+  Object.entries(retornos()).forEach(([r,pc])=>P.push([r,pc]));
+  P.push([]);
+  P.push(['TABELAS DE DOCUMENTAÇÃO']);
+  P.push(['Tabela','Comissão fixa (R$)']);
+  ((cfg()&&cfg().docTabelas)||[]).forEach(t=>P.push([t.nome,t.valor||0]));
+  P.push([]);
+  P.push(['BONIFICAÇÃO — VENDAS DIVERSAS']);
+  P.push(['Cilindrada','Valor por moto (R$)']);
+  [350,450,650].forEach(cc=>P.push([cc+'cc',b[cc]]));
+  XLSX.utils.book_append_sheet(wb,xlsWs(P,{larg:[54,26]}),'Parâmetros');
+
+  XLSX.writeFile(wb,'Apuracao_'+mes+'.xlsx');
 }
 
 /* ================= ADMIN ================= */
