@@ -1490,7 +1490,7 @@ function detalheHtml(l,acoes){
          <tr><td class="muted" style="padding-left:18px">Valor cobrado</td><td class="muted">${fmt(l.doc.valor)}</td></tr>
          <tr><td class="muted" style="padding-left:18px">Desconto</td><td class="muted">${fmt(l.doc.desconto)}</td></tr>
          <tr><td class="muted" style="padding-left:18px">Líquido ao cliente</td><td class="muted">${fmt((l.doc.valor||0)-(l.doc.desconto||0))}</td></tr>
-         <tr><td><b>Comissão documentação</b></td><td><b>${fmt(valorDoc(l.doc.tabelaId))}</b></td></tr>`
+         <tr><td><b>Prêmio Documentação</b></td><td><b>${fmt(valorDoc(l.doc.tabelaId))}</b></td></tr>`
       : `<tr><td colspan="2"><span class="chip red">🚫 Documentação perdida — ${l.doc.motivo}</span></td></tr>`;
     const comMoto=l.valorMoto*(c.pctMoto||0)/100;
     const comAcess=(l.valorAcess||0)*(c.pctAcess||0)/100;
@@ -1700,19 +1700,20 @@ function htmlDiversas(mes){
   const nomes=Object.keys(res).sort((a,b)=>a.localeCompare(b,'pt-BR'));
   if(!nomes.length) return {html:'',total:0};
   const b=bonifCC();
-  let total=0, linhas='';
+  let total=0, ganho=0, linhas='';
   nomes.forEach(v=>{
     const r=res[v]; total+=r.total;
-    linhas+=`<tr><td>${v}</td><td>${r.qt[350]}</td><td>${r.qt[450]}</td><td>${r.qt[650]}</td><td>${r.qtVendas}</td><td>${fmt(r.valorMotos)}</td><td>${r.premioCamp?fmt(r.premioCamp):'—'}</td><td><b>${fmt(r.total)}</b></td></tr>`;
-    if(r.semCC.length) linhas+=`<tr><td colspan="8" class="muted">⚠️ sem cilindrada identificada: ${r.semCC.join(', ')}</td></tr>`;
+    ganho+=r.total+(r.premioCampPago||0);
+    linhas+=`<tr><td>${v}</td><td>${r.qt[350]}</td><td>${r.qt[450]}</td><td>${r.qt[650]}</td><td>${r.qtVendas}</td><td>${fmt(r.valorMotos)}</td><td>${r.premioCamp?fmt(r.premioCamp):'—'}</td><td>${r.premioCampPago?fmt(r.premioCampPago):'—'}</td><td><b>${fmt(r.total+(r.premioCampPago||0))}</b></td><td><b>${fmt(r.total)}</b></td></tr>`;
+    if(r.semCC.length) linhas+=`<tr><td colspan="10" class="muted">⚠️ sem cilindrada identificada: ${r.semCC.join(', ')}</td></tr>`;
   });
   const html=`<div class="card">
     <h2>🤝 Vendas Diversas — bonificação</h2>
     <p class="muted">Bonificação fixa por moto vendida: 350cc ${fmt(b[350])} · 450cc ${fmt(b[450])} · 650cc ${fmt(b[650])}. Não gera comissão, DSR, financiamento nem documentação.</p>
     <div class="scroll-x"><table>
-      <tr><th>Vendedor</th><th>350cc</th><th>450cc</th><th>650cc</th><th>Motos</th><th>Valor vendido</th><th>Prêmio camp.</th><th>A pagar</th></tr>
+      <tr><th>Vendedor</th><th>350cc</th><th>450cc</th><th>650cc</th><th>Motos</th><th>Valor vendido</th><th>Prêmio camp.</th><th>Prêmio já pago</th><th>Total ganho</th><th>A receber</th></tr>
       ${linhas}
-      <tr><td colspan="7"><b>TOTAL</b></td><td><b>${fmt(total)}</b></td></tr>
+      <tr><td colspan="8"><b>TOTAL</b></td><td><b>${fmt(ganho)}</b></td><td><b>${fmt(total)}</b></td></tr>
     </table></div>
     <button class="btn sec" onclick="exportarDiversas()">📊 Exportar bonificações</button>
   </div>`;
@@ -1823,12 +1824,14 @@ function renderApuracaoVendedor(){
   }).join('');
   const premios=(r.premioQt||0)+(r.premioEmpl||0);
   if(premios>0) linhas+=`<div class="total-line"><span>Prêmios do mês</span><b>${fmt(premios)}</b></div>`;
-  if(r.premioCampPago>0) linhas+=`<div class="total-line muted"><span>Prêmio campanha já pago em caixa (não soma)</span><b>−${fmt(r.premioCampPago)}</b></div>`;
+
   const pend=lancAll().filter(l=>l.mes===mesAtual&&l.status==='pendente'&&l.vendedor===SESSION.nome).length;
   $('apuResultado').innerHTML=`<div class="card">
     <h2>💰 Meu comissionamento — ${nomeMes(mesAtual)}</h2>
     ${linhas||'<p class="muted">Nenhuma venda validada neste mês.</p>'}
-    <div class="total-line big"><span>Comissionamento total</span><span>${fmt(r.total)}</span></div>
+    <div class="total-line big"><span>Total ganho no mês</span><span>${fmt(r.total+(r.premioCampPago||0))}</span></div>
+    ${r.premioCampPago?`<div class="total-line"><span class="muted">(−) Prêmio já pago em caixa</span><span class="muted">−${fmt(r.premioCampPago)}</span></div>
+    <div class="total-line big"><span>Valor a receber</span><span>${fmt(r.total)}</span></div>`:''}
     ${pend?`<p class="muted" style="margin-top:8px">⏳ ${pend} lançamento(s) aguardando validação — ainda não contabilizados.</p>`:''}
   </div>`;
 }
@@ -1864,13 +1867,15 @@ function renderApuracao(){
       <div class="total-line"><span>Acessórios vendidos</span><span>${fmt(r.valorAcess)}</span></div>
       <div class="total-line"><span>Comissão acessórios (${c.pctAcess}%)</span><span>${fmt(r.comAcess)}</span></div>
       <div class="total-line"><span>DSR acessórios</span><span>${fmt(r.dsrAcess)}</span></div>
-      <div class="total-line"><span>Comissão documentação (${r.qtEmpl})</span><span>${fmt(r.comDoc)}</span></div>
+      <div class="total-line"><span>Prêmio Documentação (${r.qtEmpl})</span><span>${fmt(r.comDoc)}</span></div>
       <div class="total-line"><span>Prêmio qt. vendas</span><span>${fmt(r.premioQt)}</span></div>
       <div class="total-line"><span>Prêmio emplacamento</span><span>${fmt(r.premioEmpl)}</span></div>
       <div class="total-line"><span>Prêmio seminovos (${r.qtSN})</span><span>${fmt(r.premioSN)}</span></div>
       ${r.premioCamp?`<div class="total-line"><span>🏆 Prêmio campanha (a pagar)</span><span>${fmt(r.premioCamp)}</span></div>`:''}
-      ${r.premioCampPago?`<div class="total-line"><span class="muted">🏆 Prêmio campanha já pago em caixa — não soma</span><span class="muted">${fmt(r.premioCampPago)}</span></div>`:''}
-      <div class="total-line big"><span>TOTAL</span><span>${fmt(r.total)}</span></div>
+      ${r.premioCampPago?`<div class="total-line"><span>🏆 Prêmio campanha (pago em caixa)</span><span>${fmt(r.premioCampPago)}</span></div>`:''}
+      <div class="total-line big"><span>TOTAL GANHO NO MÊS</span><span>${fmt(r.total+(r.premioCampPago||0))}</span></div>
+      ${r.premioCampPago?`<div class="total-line"><span class="muted">(−) Prêmio já pago em caixa</span><span class="muted">−${fmt(r.premioCampPago)}</span></div>
+      <div class="total-line big"><span>VALOR A RECEBER</span><span>${fmt(r.total)}</span></div>`:''}
       ${Object.keys(r.pagFormas).length?`<h3>Formas de pagamento</h3>`+Object.entries(r.pagFormas).map(([k,v2])=>`<span class="chip blue">${k}: ${fmt(v2)}</span>`).join(''):''}
       ${r.docsPerdidas.length?`<h3 style="color:#c0392b">Docs perdidas (${r.docsPerdidas.length})</h3>`+r.docsPerdidas.map(d=>`<span class="chip red">${d.moto}: ${d.motivo}</span>`).join(''):''}
     </div>`;
@@ -1878,7 +1883,13 @@ function renderApuracao(){
   const dv=htmlDiversas(mesAtual);
   geral+=dv.total;
   const pr=htmlPremios(mesAtual);
-  const cab=isSup()?`<div class="card"><h2>💰 Total geral do mês: ${fmt(geral)}</h2></div>`:'';
+  const pmG=premiosDoMes(mesAtual);
+  const pagoG=Object.values(pmG).reduce((t,r)=>t+r.pago,0);
+  const cab=isSup()?`<div class="card">
+    <h2>💰 Total geral ganho no mês: ${fmt(geral+pagoG)}</h2>
+    ${pagoG?`<div class="total-line"><span class="muted">(−) Prêmios já pagos em caixa</span><span class="muted">−${fmt(pagoG)}</span></div>
+    <div class="total-line big"><span>TOTAL A PAGAR</span><span>${fmt(geral)}</span></div>`:''}
+  </div>`:'';
   $('apuResultado').innerHTML=cab+(html||(dv.html||pr?'':'<div class="card"><p class="muted">Sem lançamentos validados neste mês.</p></div>'))+dv.html+pr;
 }
 const XLS_MOEDA='R$ #,##0.00';
@@ -1940,14 +1951,13 @@ function exportarExcel(){
   R.push(['Origem','Valor']);
   add('Comissionamento (vendedores)',totCom,true);
   add('Bonificação (Vendas Diversas)',totBonif,true);
-  add('TOTAL GERAL',totCom+totBonif,true);
   const pmR=premiosDoMes(mes);
   const prAPagar=Object.values(pmR).reduce((t,r)=>t+r.aPagar,0);
   const prPago=Object.values(pmR).reduce((t,r)=>t+r.pago,0);
-  if(prAPagar||prPago){
-    add('   dos quais Prêmio Campanha a pagar',prAPagar,true);
-    add('   Prêmio Campanha já pago em caixa (fora do total)',prPago,true);
-  }
+  add('TOTAL GANHO NO MÊS (com prêmios)',totCom+totBonif+prPago,true);
+  add('   (−) Prêmio Campanha já pago em caixa',prPago,true);
+  add('TOTAL A PAGAR',totCom+totBonif,true);
+  add('   dos quais Prêmio Campanha a pagar',prAPagar,true);
   R.push([]);
   R.push(['MIX POR CILINDRADA']);
   R.push(['Cilindrada','Motos','Valor','% do valor']);
@@ -1965,34 +1975,34 @@ function exportarExcel(){
   XLSX.utils.book_append_sheet(wb,xlsWs(R,{moedaRC:rc,larg:[46,16,16,14]}),'Resumo');
 
   /* ---------- 2. APURAÇÃO POR VENDEDOR ---------- */
-  const cabA=['Vendedor','Valor de Venda Motos','Comissão Motos','DSR Motos','Valor Financiado','Retorno Bruto','Retorno Líquido','Comissão Financiamentos','DSR Financiamentos','Comissão Acess.','DSR Acess.','Comissão Doc.','Prêmio Qt Vendas','Prêmio Emplacamento','Prêmio Moto SN','Prêmio Campanha (a pagar)','Prêmio campanha já pago em caixa (não soma)','TOTAL'];
+  const cabA=['Vendedor','Valor de Venda Motos','Comissão Motos','DSR Motos','Valor Financiado','Retorno Bruto','Retorno Líquido','Comissão Financiamentos','DSR Financiamentos','Comissão Acess.','DSR Acess.','Prêmio Documentação','Prêmio Qt Vendas','Prêmio Emplacamento','Prêmio Moto SN','Prêmio Campanha (a pagar)','Prêmio Campanha (pago em caixa)','TOTAL GANHO NO MÊS','VALOR A RECEBER'];
   let A=cabecalho('APURAÇÃO POR VENDEDOR');
   A.push(cabA);
   const soma=new Array(cabA.length-1).fill(0);
   Object.entries(res).filter(([,r])=>r.total!==0||r.qtVendas||r.valorAcess||r.qtSN||r.premioCampPago)
     .sort((a,b)=>b[1].total-a[1].total).forEach(([v,r])=>{
-    const linha=[r.valorMotos,r.comMotos,r.dsrMotos,r.valorFinanciado,r.finBruto,r.finLiquido,r.comFin,r.dsrFin,r.comAcess,r.dsrAcess,r.comDoc,r.premioQt,r.premioEmpl,r.premioSN,r.premioCamp||0,r.premioCampPago||0,r.total];
+    const linha=[r.valorMotos,r.comMotos,r.dsrMotos,r.valorFinanciado,r.finBruto,r.finLiquido,r.comFin,r.dsrFin,r.comAcess,r.dsrAcess,r.comDoc,r.premioQt,r.premioEmpl,r.premioSN,r.premioCamp||0,r.premioCampPago||0,r.total+(r.premioCampPago||0),r.total];
     linha.forEach((x,i)=>soma[i]+=x);
     A.push([v,...linha]);
   });
   A.push(['TOTAL',...soma]);
-  XLSX.utils.book_append_sheet(wb,xlsWs(A,{cab:5,moeda:[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17],
-    larg:[26,20,16,14,18,16,16,20,18,16,14,16,16,18,16,22,30,18],autofiltro:true}),'Apuração');
+  XLSX.utils.book_append_sheet(wb,xlsWs(A,{cab:5,moeda:[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
+    larg:[26,20,16,14,18,16,16,20,18,16,14,20,16,18,16,22,24,20,18],autofiltro:true}),'Apuração');
 
   /* ---------- 3. VENDAS DIVERSAS ---------- */
   const b=bonifCC();
   let D=cabecalho('VENDAS DIVERSAS — BONIFICAÇÃO');
   D.push(['Bonificação por moto vendida:','350cc',b[350],'450cc',b[450],'650cc',b[650]]);
   D.push([]);
-  D.push(['Vendedor','Motos 350cc','Motos 450cc','Motos 650cc','Total de motos','Valor vendido','Prêmio campanha','Total a pagar']);
-  let dTot=[0,0,0,0,0,0,0];
+  D.push(['Vendedor','Motos 350cc','Motos 450cc','Motos 650cc','Total de motos','Valor vendido','Prêmio campanha (a pagar)','Prêmio campanha (pago em caixa)','TOTAL GANHO NO MÊS','VALOR A RECEBER']);
+  let dTot=[0,0,0,0,0,0,0,0,0];
   Object.entries(dv).sort((a,b2)=>a[0].localeCompare(b2[0],'pt-BR')).forEach(([v,r])=>{
-    const l=[r.qt[350],r.qt[450],r.qt[650],r.qtVendas,r.valorMotos,r.premioCamp||0,r.total];
+    const l=[r.qt[350],r.qt[450],r.qt[650],r.qtVendas,r.valorMotos,r.premioCamp||0,r.premioCampPago||0,r.total+(r.premioCampPago||0),r.total];
     l.forEach((x,i)=>dTot[i]+=x);
     D.push([v,...l]);
   });
   D.push(['TOTAL',...dTot]);
-  XLSX.utils.book_append_sheet(wb,xlsWs(D,{cab:7,moeda:[5,6,7],larg:[28,14,14,14,16,18,18,20],autofiltro:true}),'Vendas Diversas');
+  XLSX.utils.book_append_sheet(wb,xlsWs(D,{cab:7,moeda:[5,6,7,8,9],larg:[28,14,14,14,16,18,22,26,22,20],autofiltro:true}),'Vendas Diversas');
 
   /* ---------- 4. LANÇAMENTOS ---------- */
   let L=cabecalho('LANÇAMENTOS VALIDADOS');
@@ -2102,7 +2112,7 @@ function renderAdmin(){
     <label>Comissão do vendedor sobre o líquido (%)</label>
     <input type="number" step="0.01" value="${c.pctComissaoVendFin!==undefined?c.pctComissaoVendFin:10}" onchange="admSet('pctComissaoVendFin',this.value)"></div>
   <div class="card"><h2>📄 Tabelas de Documentação</h2>
-    <p class="muted">Valor fixo de comissão por documentação feita. Use 0 para tabelas sem comissão.</p><div id="admDocs"></div>
+    <p class="muted">Valor fixo de prêmio por documentação feita. Use 0 para tabelas sem prêmio.</p><div id="admDocs"></div>
     <div class="admin-row"><input id="novaDocNome" placeholder="Nome (ex.: Tabela 0)"><span class="muted">R$</span><input id="novaDocValor" class="narrow" type="number" step="0.01" placeholder="0"><button class="btn sm" onclick="admAddDoc()">＋</button></div></div>
   <div class="card"><h2>💵 Percentuais e Prêmios</h2>
     <label>Comissão motos (%)</label><input type="number" step="0.01" value="${c.pctMoto}" onchange="admSet('pctMoto',this.value)">
