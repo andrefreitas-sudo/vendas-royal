@@ -404,7 +404,15 @@ function saveLocal(){
 }
 function cfg(){ return CACHE.config?CACHE.config.data:null; }
 function usuarios(){ return CACHE.usuarios?CACHE.usuarios.data:[]; }
-function vendedores(){ return usuarios().filter(u=>u.role==='vendedor'&&u.ativo!==false).map(u=>u.nome); }
+/* gestores (supervisor/admin) marcados para também vender */
+function tambemVendem(){ return (cfg()&&cfg().tambemVendem)||[]; }
+function vendedores(){
+  const extras=tambemVendem();
+  return usuarios()
+    .filter(u=>u.ativo!==false && (u.role==='vendedor' || extras.indexOf(u.nome)>=0))
+    .map(u=>u.nome)
+    .sort((a,b)=>String(a).localeCompare(String(b),'pt-BR'));
+}
 function isSup(){ return SESSION&&(SESSION.role==='supervisor'||SESSION.role==='admin'); }
 function retornos(){ return (cfg()&&cfg().retornos)||{R0:0,R1:1.2,R2:2.4,R3:3.6,R4:4.8,R5:6}; }
 function ilaDoMes(mes){
@@ -630,16 +638,31 @@ function verFila(){
     '\n\nEles estão salvos neste aparelho. Deseja tentar enviar agora?';
   if(confirm(msg)) syncAll(true);
 }
+let descartadosFila=[];
 async function flushOutbox(){
   if(!OUTBOX.length) return;
+  descartadosFila=[];
   const lops=OUTBOX.filter(o=>o.file==='lancamentos');
   for(const op of lops){
     if(op.op==='delete'){
       const r=await sb.from('lancamentos').delete().eq('id',op.id);
       if(r.error) throw r.error;
     }else{
-      const r=await sb.from('lancamentos').upsert(lancToRow(op.record));
-      if(r.error) throw r.error;
+      /* Proteção: uma cópia antiga parada na fila não pode desfazer o que o
+         servidor já tratou. Se lá o lançamento já foi validado/rejeitado e é
+         mais recente que a cópia da fila, a cópia é descartada. */
+      const atual=await sb.from('lancamentos').select('status,updated_at').eq('id',op.record.id).maybeSingle();
+      if(atual.error) throw atual.error;
+      const srv=atual.data;
+      const obsoleto = srv && srv.status!=='pendente'
+        && (op.record.status==='pendente')
+        && Number(srv.updated_at||0) > Number(op.record.updatedAt||0);
+      if(obsoleto){
+        descartadosFila.push((op.record.vendedor||'')+' · '+(op.record.data||''));
+      }else{
+        const r=await sb.from('lancamentos').upsert(lancToRow(op.record));
+        if(r.error) throw r.error;
+      }
     }
   }
   if(lops.length) OUTBOX=OUTBOX.filter(o=>o.file!=='lancamentos');
@@ -700,6 +723,10 @@ async function syncAll(manual){
   setDot(falhou?(navigator.onLine?'pend':'off'):(OUTBOX.length?'pend':'on'));
   if(ultimoErroEnvio && itensNaFila())
     toast('Não foi possível enviar ao servidor — toque no aviso vermelho', true);
+  if(descartadosFila.length){
+    toast(descartadosFila.length+' lançamento(s) deste aparelho estavam desatualizados e foram ignorados: o supervisor já tinha tratado no servidor.', true);
+    descartadosFila=[];
+  }
   try{
     if(podeRedesenhar()){
       if(tabAtiva!=='lancar') renderFormBasics();
@@ -2128,6 +2155,9 @@ function renderAdmin(){
     <div class="admin-row"><input id="fqMin" class="narrow" type="number" placeholder="Qt mín."><input id="fqPremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasQt','fqMin','fqPremio')">＋</button></div>
     <h3>Prêmio Emplacamento</h3><div id="admFaixasEmpl"></div>
     <div class="admin-row"><input id="feMin" class="narrow" type="number" placeholder="Qt mín."><input id="fePremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasEmpl','feMin','fePremio')">＋</button></div></div>
+  <div class="card"><h2>🧑‍💼 Gestores que também vendem</h2>
+    <p class="muted">Supervisor ou administrador marcado aqui passa a aparecer na lista de vendedores e recebe comissão igual aos demais, sem perder nenhuma função de gestão (validar, alterar, excluir).</p>
+    <div id="admTambemVende"></div></div>
   <div class="card"><h2>🤝 Vendas Diversas</h2>
     <p class="muted">Vendedores sem login. O lançamento é igual ao normal, mas o pagamento é só a bonificação fixa por cilindrada.</p>
     <div id="admVendDiv"></div>
@@ -2197,6 +2227,13 @@ function admAddVendDiv(){
   $('novoVendDiv').value='';
   saveConfig(); admRenderListas(); renderFormBasics();
 }
+function admSetVende(nome,on){
+  const c=cfg(); c.tambemVendem=(c.tambemVendem||[]).slice();
+  const i=c.tambemVendem.indexOf(nome);
+  if(on && i<0) c.tambemVendem.push(nome);
+  if(!on && i>=0) c.tambemVendem.splice(i,1);
+  saveConfig(); admRenderListas(); renderFormBasics();
+}
 function admAddVendInt(){
   const v=$('novoVendInt').value.trim(); if(!v) return;
   const c=cfg(); c.vendasInternas=c.vendasInternas||vendInternos().slice();
@@ -2232,6 +2269,20 @@ function admRenderListas(){
   $('admFaixasQt').innerHTML=(c.faixasQt||[]).map((f,i)=>`<div class="admin-row"><span class="muted">≥</span><input class="narrow" type="number" value="${f.min}" onchange="admEditFaixa('faixasQt',${i},'min',this.value)"><span class="muted">vendas →</span><input type="number" value="${f.premio}" onchange="admEditFaixa('faixasQt',${i},'premio',this.value)"><button class="mini" onclick="admRmStr('faixasQt',${i})">🗑️</button></div>`).join('');
   const dv=$('admVendDiv');
   if(dv) dv.innerHTML=(c.vendedoresDiversos||[]).map((v,i)=>`<div class="admin-row"><input value="${v}" onchange="admEditStr('vendedoresDiversos',${i},this.value)"><button class="mini" onclick="admRmStr('vendedoresDiversos',${i})">🗑️</button></div>`).join('')||'<p class="muted">Nenhum vendedor diverso cadastrado.</p>';
+  const tv=$('admTambemVende');
+  if(tv){
+    const gest=usuarios().filter(u=>u.role!=='vendedor'&&u.ativo!==false)
+      .sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'));
+    tv.innerHTML=gest.length?gest.map(u=>{
+      const on=tambemVendem().indexOf(u.nome)>=0;
+      const n=String(u.nome).replace(/'/g,"\\'");
+      return `<div class="admin-row"><span style="flex:1">${u.nome} <span class="chip">${u.role}</span></span>
+        <div class="toggle-group">
+          <button class="${on?'':'on'}" onclick="admSetVende('${n}',false)">Não vende</button>
+          <button class="${on?'on':''}" onclick="admSetVende('${n}',true)">Também vende</button>
+        </div></div>`;
+    }).join(''):'<p class="muted">Nenhum gestor cadastrado.</p>';
+  }
   const dvi=$('admVendInt');
   if(dvi) dvi.innerHTML=vendInternos().map((v,i)=>`<div class="admin-row"><input value="${v}" onchange="admEditVendInt(${i},this.value)"><button class="mini" onclick="admRmVendInt(${i})">🗑️</button></div>`).join('')||'<p class="muted">Nenhuma venda interna cadastrada.</p>';
   const acc=$('admCC');
