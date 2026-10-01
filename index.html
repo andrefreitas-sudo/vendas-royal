@@ -861,6 +861,15 @@ function renderTabAtual(){
   if(tabAtiva==='usuarios') renderUsuarios();
   if(tabAtiva==='admin') renderAdmin();
 }
+function irParaMes(m){
+  limparEdicao();
+  ['fbLista','fbValidar'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+  ['filtroVendValidar','filtroVend','filtroStatus','filtroTipo'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+  mesAtual=m;
+  renderTabAtual();
+  const carregados=(CACHE.lancamentos&&CACHE.lancamentos.meses)||[];
+  if(carregados.indexOf(mesAtual)<0) syncAll();
+}
 function mudarMes(d){
   limparEdicao();
   ['fbLista','fbValidar'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
@@ -1578,13 +1587,26 @@ function renderValidar(){
     ? '('+todosPend.length+')'
     : '('+pend.length+' de '+todosPend.length+')';
 
-  $('listaPendentes').innerHTML=pend.length?pend.map(l=>detalheHtml(l,
+  /* pendentes esquecidos em outro mês: avisa e leva até lá */
+  const outros={};
+  lancAll().filter(l=>l.status==='pendente'&&l.mes!==mesAtual).forEach(l=>{ outros[l.mes]=(outros[l.mes]||0)+1; });
+  const mesesOutros=Object.keys(outros).sort();
+  const avisoOutros = mesesOutros.length
+    ? `<div class="card" style="border-left:4px solid var(--red)">
+        <p><b>⚠️ Há lançamentos aguardando validação em outro mês.</b></p>
+        <p class="muted">Toque no mês para ir até eles.</p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+        ${mesesOutros.map(m=>`<button class="btn sec sm" onclick="irParaMes('${m}')">${nomeMes(m)} — ${outros[m]} pendente(s)</button>`).join('')}
+        </div></div>`
+    : '';
+
+  $('listaPendentes').innerHTML=avisoOutros+(pend.length?pend.map(l=>detalheHtml(l,
     `${motivosDup(l).length&&isAdmin()?`<button class="btn sec sm" onclick="liberarDup('${l.id}')">🔓 Não é duplicado</button>`:''}
      <button class="btn ok sm" onclick="validarLanc('${l.id}',true)">✅ Validar</button>
      <button class="btn danger sm" onclick="validarLanc('${l.id}',false)">✖ Rejeitar</button>
      <button class="btn sec sm" onclick="editarLanc('${l.id}')">✏️ Alterar</button>
      ${podeExcluir(l)?`<button class="btn danger sm" onclick="excluirLanc('${l.id}')">🗑️ Excluir</button>`:''}`
-  )).join(''):'<p class="muted">'+(todosPend.length?'Nenhum pendente com esses filtros.':'Nada pendente. 🎉')+'</p>';
+  )).join(''):'<p class="muted">'+(todosPend.length?'Nenhum pendente com esses filtros.':'Nada pendente. 🎉')+'</p>');
 
   const jaTratados=lancAll().filter(l=>l.mes===mesAtual&&l.status!=='pendente')
     .filter(passa).sort((a,b)=>b.data.localeCompare(a.data));
