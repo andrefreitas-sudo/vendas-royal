@@ -1986,6 +1986,44 @@ function htmlDiversas(mes){
   </div>`;
   return {html,total};
 }
+/* Resumo geral dos financiamentos do mês, usando a mesma cadeia de cálculo
+   já existente (calcFin): retorno bruto → −ILA → −imposto = líquido. */
+function resumoFinanciamentos(mes){
+  const r={qt:0, valor:0, bruto:0, liquido:0, porBanco:{}};
+  lancAll().filter(l=>l.mes===mes && l.status==='validado' && l.tipo==='venda').forEach(l=>{
+    (l.pagamentos||[]).forEach(pg=>{
+      if(pg.tipo!=='Financiamento') return;
+      const f=calcFin(pg.valor,pg.retorno,mes);
+      r.qt++; r.valor+=pg.valor||0; r.bruto+=f.bruto; r.liquido+=f.liquido;
+      const k=nomeBanco(pg.banco)+' · '+(pg.retorno||'R0');
+      const b=r.porBanco[k]||(r.porBanco[k]={qt:0,valor:0,bruto:0,liquido:0});
+      b.qt++; b.valor+=pg.valor||0; b.bruto+=f.bruto; b.liquido+=f.liquido;
+    });
+  });
+  return r;
+}
+function htmlFinanciamentos(mes){
+  const r=resumoFinanciamentos(mes);
+  if(!r.qt) return '';
+  const bancos=Object.entries(r.porBanco).sort((a,b)=>b[1].valor-a[1].valor);
+  return `<div class="card">
+    <h2>🏦 Financiamentos — geral da loja</h2>
+    <p class="muted">Retorno bruto conforme o R de cada contrato, menos ILA de ${ilaDoMes(mes)}% e imposto de ${impostoFin()}%.</p>
+    <div class="bigkpi">
+      <div class="k"><div class="v">${r.qt}</div><div class="l">Contratos</div></div>
+      <div class="k"><div class="v">${fmt(r.valor)}</div><div class="l">Total de Financiamentos</div></div>
+    </div>
+    <div class="bigkpi">
+      <div class="k"><div class="v">${fmt(r.bruto)}</div><div class="l">Total Bruto</div></div>
+      <div class="k"><div class="v">${fmt(r.liquido)}</div><div class="l">Total Líquido</div></div>
+    </div>
+    <div class="scroll-x"><table>
+      <tr><th>Banco · Retorno</th><th>Contratos</th><th>Financiado</th><th>Bruto</th><th>Líquido</th></tr>
+      ${bancos.map(([k,b])=>`<tr><td>${k}</td><td>${b.qt}</td><td>${fmt(b.valor)}</td><td>${fmt(b.bruto)}</td><td>${fmt(b.liquido)}</td></tr>`).join('')}
+      <tr><td><b>TOTAL</b></td><td><b>${r.qt}</b></td><td><b>${fmt(r.valor)}</b></td><td><b>${fmt(r.bruto)}</b></td><td><b>${fmt(r.liquido)}</b></td></tr>
+    </table></div>
+  </div>`;
+}
 function htmlPremios(mes){
   const pm=premiosDoMes(mes);
   const nomes=Object.keys(pm).sort((a,b)=>a.localeCompare(b,'pt-BR'));
@@ -2160,7 +2198,8 @@ function renderApuracao(){
     ${pagoG?`<div class="total-line"><span class="muted">(−) Prêmios já pagos em caixa</span><span class="muted">−${fmt(pagoG)}</span></div>
     <div class="total-line big"><span>TOTAL A PAGAR</span><span>${fmt(geral)}</span></div>`:''}
   </div>`:'';
-  $('apuResultado').innerHTML=cab+(html||(dv.html||pr?'':'<div class="card"><p class="muted">Sem lançamentos validados neste mês.</p></div>'))+dv.html+pr;
+  const fin=isSup()?htmlFinanciamentos(mesAtual):'';
+  $('apuResultado').innerHTML=cab+fin+(html||(dv.html||pr||fin?'':'<div class="card"><p class="muted">Sem lançamentos validados neste mês.</p></div>'))+dv.html+pr;
 }
 const XLS_MOEDA='R$ #,##0.00';
 function xlsWs(rows,opt){
@@ -2228,6 +2267,16 @@ function exportarExcel(){
   add('   (−) Prêmio Campanha já pago em caixa',prPago,true);
   add('TOTAL A PAGAR',totCom+totBonif,true);
   add('   dos quais Prêmio Campanha a pagar',prAPagar,true);
+  const rf=resumoFinanciamentos(mes);
+  if(rf.qt){
+    R.push([]);
+    R.push(['FINANCIAMENTOS — GERAL DA LOJA']);
+    R.push(['Indicador','Valor']);
+    add('Contratos',rf.qt,false);
+    add('Total de Financiamentos',rf.valor,true);
+    add('Total Bruto',rf.bruto,true);
+    add('Total Líquido',rf.liquido,true);
+  }
   R.push([]);
   R.push(['MIX POR CILINDRADA']);
   R.push(['Cilindrada','Motos','Valor','% do valor']);
