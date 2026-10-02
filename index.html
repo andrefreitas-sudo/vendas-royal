@@ -406,6 +406,19 @@ function cfg(){ return CACHE.config?CACHE.config.data:null; }
 function usuarios(){ return CACHE.usuarios?CACHE.usuarios.data:[]; }
 /* gestores (supervisor/admin) marcados para também vender */
 function tambemVendem(){ return (cfg()&&cfg().tambemVendem)||[]; }
+/* ============ COMISSIONAMENTO DE SUPERVISÃO ============
+   Fator aplicado sobre o valor total das motos vendidas pela loja no mês,
+   excluindo as Vendas Internas. Não substitui nem altera nenhum outro cálculo. */
+function fatorSupervisao(){ const c=cfg()||{}; return c.fatorSupervisao!==undefined?Number(c.fatorSupervisao):0.0025; }
+function recebemSupervisao(){ return (cfg()&&cfg().recebemSupervisao)||[]; }
+/* mês a partir do qual a supervisão passa a valer — protege meses já fechados */
+function supervDesde(){ return (cfg()&&cfg().supervDesde)||''; }
+function supervValeNoMes(mes){ const d=supervDesde(); return !d || String(mes)>=d; }
+function baseSupervisao(mes){
+  return lancAll()
+    .filter(l=>l.mes===mes && l.status==='validado' && l.tipo==='venda' && !ehInterna(l))
+    .reduce((t,l)=>t+(l.valorMoto||0),0);
+}
 function vendedores(){
   const extras=tambemVendem();
   return usuarios()
@@ -1678,10 +1691,13 @@ function calcularApuracao(mes){
   lancAll().filter(l=>l.mes===mes&&l.tipo==='premio'&&l.status==='validado').forEach(l=>comPremio[l.vendedor]=true);
   /* diversos nunca entram aqui (têm relatório próprio, inclusive do prêmio);
      internos só entram se tiverem prêmio lançado */
+  const sup=recebemSupervisao();
   const nomes=(isSup()?nomesApuracao(mes):[SESSION.nome])
-    .filter(n=>vendDiversos().indexOf(n)<0 && (vendInternos().indexOf(n)<0 || comPremio[n]));
+    .filter(n=>vendDiversos().indexOf(n)<0 && (vendInternos().indexOf(n)<0 || comPremio[n]))
+    .concat((isSup()?sup:sup.filter(n=>n===SESSION.nome))
+      .filter(n=>(isSup()?nomesApuracao(mes):[SESSION.nome]).indexOf(n)<0));
   nomes.forEach(v=>{
-    res[v]={premioCamp:0,premioCampPago:0,valorMotos:0,qtVendas:0,comMotos:0,dsrMotos:0,comFin:0,dsrFin:0,valorAcess:0,comAcess:0,dsrAcess:0,
+    res[v]={comSuperv:0,baseSuperv:0,premioCamp:0,premioCampPago:0,valorMotos:0,qtVendas:0,comMotos:0,dsrMotos:0,comFin:0,dsrFin:0,valorAcess:0,comAcess:0,dsrAcess:0,
             valorFinanciado:0,finBruto:0,finLiquido:0,
             comDoc:0,qtEmpl:0,qtSN:0,premioQt:0,premioEmpl:0,premioSN:0,docsPerdidas:[],pagFormas:{},total:0};
   });
@@ -1711,6 +1727,9 @@ function calcularApuracao(mes){
     }else if(l.tipo==='acessorio') r.valorAcess+=l.valor;
     else if(l.tipo==='seminovo') r.qtSN++;
   });
+  /* comissionamento de supervisão: fator sobre as motos vendidas pela loja no mês */
+  const baseSup=supervValeNoMes(mes)?baseSupervisao(mes):0, fSup=fatorSupervisao();
+  sup.forEach(n=>{ if(res[n]){ res[n].baseSuperv=baseSup; res[n].comSuperv=baseSup*fSup; } });
   Object.values(res).forEach(r=>{
     r.comMotos=r.valorMotos*(c.pctMoto||0)/100;
     r.dsrMotos=r.comMotos*fator;
@@ -1720,7 +1739,7 @@ function calcularApuracao(mes){
     r.premioQt=premioFaixa(c.faixasQt,r.qtVendas);
     r.premioEmpl=premioFaixa(c.faixasEmpl,r.qtEmpl);
     r.premioSN=r.qtSN*(c.premioSeminovo||0);
-    r.total=r.comMotos+r.dsrMotos+r.comFin+r.dsrFin+r.comAcess+r.dsrAcess+r.comDoc+r.premioQt+r.premioEmpl+r.premioSN+r.premioCamp;
+    r.total=r.comMotos+r.dsrMotos+r.comFin+r.dsrFin+r.comAcess+r.dsrAcess+r.comDoc+r.premioQt+r.premioEmpl+r.premioSN+r.premioCamp+r.comSuperv;
   });
   return res;
 }
@@ -1873,6 +1892,7 @@ function renderApuracaoVendedor(){
   }).join('');
   const premios=(r.premioQt||0)+(r.premioEmpl||0);
   if(premios>0) linhas+=`<div class="total-line"><span>Prêmios do mês</span><b>${fmt(premios)}</b></div>`;
+  if(r.comSuperv>0) linhas+=`<div class="total-line"><span>👔 Comissionamento de supervisão</span><b>${fmt(r.comSuperv)}</b></div>`;
 
   const pend=lancAll().filter(l=>l.mes===mesAtual&&l.status==='pendente'&&l.vendedor===SESSION.nome).length;
   $('apuResultado').innerHTML=`<div class="card">
@@ -1904,7 +1924,7 @@ function renderApuracao(){
   Object.entries(res).forEach(([v,r])=>{
     geral+=r.total;                                  /* total geral sempre soma todos */
     if(fvApu && v!==fvApu) return;
-    if(r.qtVendas===0&&r.valorAcess===0&&r.qtSN===0&&!r.premioCamp&&!r.premioCampPago) return;
+    if(r.qtVendas===0&&r.valorAcess===0&&r.qtSN===0&&!r.premioCamp&&!r.premioCampPago&&!r.comSuperv) return;
     html+=`<div class="card">
       <h2>👤 ${v}</h2>
       <div class="total-line"><span>Vendas de motos (${r.qtVendas})</span><b>${fmt(r.valorMotos)}</b></div>
@@ -1920,6 +1940,7 @@ function renderApuracao(){
       <div class="total-line"><span>Prêmio qt. vendas</span><span>${fmt(r.premioQt)}</span></div>
       <div class="total-line"><span>Prêmio emplacamento</span><span>${fmt(r.premioEmpl)}</span></div>
       <div class="total-line"><span>Prêmio seminovos (${r.qtSN})</span><span>${fmt(r.premioSN)}</span></div>
+      ${r.comSuperv?`<div class="total-line"><span>👔 Comissionamento de supervisão (${fatorSupervisao()} sobre ${fmt(r.baseSuperv)} vendidos pela loja)</span><span>${fmt(r.comSuperv)}</span></div>`:''}
       ${r.premioCamp?`<div class="total-line"><span>🏆 Prêmio campanha (a pagar)</span><span>${fmt(r.premioCamp)}</span></div>`:''}
       ${r.premioCampPago?`<div class="total-line"><span>🏆 Prêmio campanha (pago em caixa)</span><span>${fmt(r.premioCampPago)}</span></div>`:''}
       <div class="total-line big"><span>TOTAL GANHO NO MÊS</span><span>${fmt(r.total+(r.premioCampPago||0))}</span></div>
@@ -2024,19 +2045,19 @@ function exportarExcel(){
   XLSX.utils.book_append_sheet(wb,xlsWs(R,{moedaRC:rc,larg:[46,16,16,14]}),'Resumo');
 
   /* ---------- 2. APURAÇÃO POR VENDEDOR ---------- */
-  const cabA=['Vendedor','Valor de Venda Motos','Comissão Motos','DSR Motos','Valor Financiado','Retorno Bruto','Retorno Líquido','Comissão Financiamentos','DSR Financiamentos','Comissão Acess.','DSR Acess.','Prêmio Documentação','Prêmio Qt Vendas','Prêmio Emplacamento','Prêmio Moto SN','Prêmio Campanha (a pagar)','Prêmio Campanha (pago em caixa)','TOTAL GANHO NO MÊS','VALOR A RECEBER'];
+  const cabA=['Vendedor','Valor de Venda Motos','Comissão Motos','DSR Motos','Valor Financiado','Retorno Bruto','Retorno Líquido','Comissão Financiamentos','DSR Financiamentos','Comissão Acess.','DSR Acess.','Prêmio Documentação','Prêmio Qt Vendas','Prêmio Emplacamento','Prêmio Moto SN','Comissionamento de Supervisão','Prêmio Campanha (a pagar)','Prêmio Campanha (pago em caixa)','TOTAL GANHO NO MÊS','VALOR A RECEBER'];
   let A=cabecalho('APURAÇÃO POR VENDEDOR');
   A.push(cabA);
   const soma=new Array(cabA.length-1).fill(0);
   Object.entries(res).filter(([,r])=>r.total!==0||r.qtVendas||r.valorAcess||r.qtSN||r.premioCampPago)
     .sort((a,b)=>b[1].total-a[1].total).forEach(([v,r])=>{
-    const linha=[r.valorMotos,r.comMotos,r.dsrMotos,r.valorFinanciado,r.finBruto,r.finLiquido,r.comFin,r.dsrFin,r.comAcess,r.dsrAcess,r.comDoc,r.premioQt,r.premioEmpl,r.premioSN,r.premioCamp||0,r.premioCampPago||0,r.total+(r.premioCampPago||0),r.total];
+    const linha=[r.valorMotos,r.comMotos,r.dsrMotos,r.valorFinanciado,r.finBruto,r.finLiquido,r.comFin,r.dsrFin,r.comAcess,r.dsrAcess,r.comDoc,r.premioQt,r.premioEmpl,r.premioSN,r.comSuperv||0,r.premioCamp||0,r.premioCampPago||0,r.total+(r.premioCampPago||0),r.total];
     linha.forEach((x,i)=>soma[i]+=x);
     A.push([v,...linha]);
   });
   A.push(['TOTAL',...soma]);
   XLSX.utils.book_append_sheet(wb,xlsWs(A,{cab:5,moeda:[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
-    larg:[26,20,16,14,18,16,16,20,18,16,14,20,16,18,16,22,24,20,18],autofiltro:true}),'Apuração');
+    larg:[26,20,16,14,18,16,16,20,18,16,14,20,16,18,16,28,22,24,20,18],autofiltro:true}),'Apuração');
 
   /* ---------- 3. VENDAS DIVERSAS ---------- */
   const b=bonifCC();
@@ -2177,6 +2198,15 @@ function renderAdmin(){
     <div class="admin-row"><input id="fqMin" class="narrow" type="number" placeholder="Qt mín."><input id="fqPremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasQt','fqMin','fqPremio')">＋</button></div>
     <h3>Prêmio Emplacamento</h3><div id="admFaixasEmpl"></div>
     <div class="admin-row"><input id="feMin" class="narrow" type="number" placeholder="Qt mín."><input id="fePremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasEmpl','feMin','fePremio')">＋</button></div></div>
+  <div class="card"><h2>👔 Comissionamento de Supervisão</h2>
+    <p class="muted">Fator aplicado sobre o <b>valor total das motos vendidas pela loja no mês</b>, descontadas as Vendas Internas. Soma ao comissionamento normal de quem estiver marcado abaixo, sem alterar o cálculo de mais ninguém.</p>
+    <label>Fator (ex.: 0,0025 = 0,25%)</label>
+    <input type="number" step="0.0001" value="${fatorSupervisao()}" onchange="admSetFatorSuperv(this.value)">
+    <label>Vale a partir do mês (deixe em branco para todos)</label>
+    <input type="month" value="${supervDesde()}" onchange="admSetSupervDesde(this.value)">
+    <p class="muted" id="admSupervInfo"></p>
+    <h3>Quem recebe</h3>
+    <div id="admRecebemSuperv"></div></div>
   <div class="card"><h2>🧑‍💼 Gestores que também vendem</h2>
     <p class="muted">Supervisor ou administrador marcado aqui passa a aparecer na lista de vendedores e recebe comissão igual aos demais, sem perder nenhuma função de gestão (validar, alterar, excluir).</p>
     <div id="admTambemVende"></div></div>
@@ -2249,6 +2279,21 @@ function admAddVendDiv(){
   $('novoVendDiv').value='';
   saveConfig(); admRenderListas(); renderFormBasics();
 }
+function admSetFatorSuperv(v){
+  const c=cfg(); c.fatorSupervisao=parseFloat(String(v).replace(',','.'))||0;
+  saveConfig(); renderAdmin();
+}
+function admSetSupervDesde(v){
+  const c=cfg(); c.supervDesde=v||'';
+  saveConfig(); renderAdmin();
+}
+function admSetSuperv(nome,on){
+  const c=cfg(); c.recebemSupervisao=(c.recebemSupervisao||[]).slice();
+  const i=c.recebemSupervisao.indexOf(nome);
+  if(on && i<0) c.recebemSupervisao.push(nome);
+  if(!on && i>=0) c.recebemSupervisao.splice(i,1);
+  saveConfig(); admRenderListas();
+}
 function admSetVende(nome,on){
   const c=cfg(); c.tambemVendem=(c.tambemVendem||[]).slice();
   const i=c.tambemVendem.indexOf(nome);
@@ -2291,6 +2336,28 @@ function admRenderListas(){
   $('admFaixasQt').innerHTML=(c.faixasQt||[]).map((f,i)=>`<div class="admin-row"><span class="muted">≥</span><input class="narrow" type="number" value="${f.min}" onchange="admEditFaixa('faixasQt',${i},'min',this.value)"><span class="muted">vendas →</span><input type="number" value="${f.premio}" onchange="admEditFaixa('faixasQt',${i},'premio',this.value)"><button class="mini" onclick="admRmStr('faixasQt',${i})">🗑️</button></div>`).join('');
   const dv=$('admVendDiv');
   if(dv) dv.innerHTML=(c.vendedoresDiversos||[]).map((v,i)=>`<div class="admin-row"><input value="${v}" onchange="admEditStr('vendedoresDiversos',${i},this.value)"><button class="mini" onclick="admRmStr('vendedoresDiversos',${i})">🗑️</button></div>`).join('')||'<p class="muted">Nenhum vendedor diverso cadastrado.</p>';
+  const si=$('admSupervInfo');
+  if(si){
+    const vale=supervValeNoMes(mesAtual);
+    const b=vale?baseSupervisao(mesAtual):0;
+    si.innerHTML=vale
+      ? `Base de ${nomeMes(mesAtual)}: <b>${fmt(b)}</b> em motos (sem Vendas Internas) → <b>${fmt(b*fatorSupervisao())}</b> por pessoa marcada.`
+      : `${nomeMes(mesAtual)} é anterior ao mês de início — nenhum comissionamento de supervisão é calculado.`;
+  }
+  const rs=$('admRecebemSuperv');
+  if(rs){
+    const todos=usuarios().filter(u=>u.ativo!==false)
+      .sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'));
+    rs.innerHTML=todos.length?todos.map(u=>{
+      const on=recebemSupervisao().indexOf(u.nome)>=0;
+      const n=String(u.nome).replace(/'/g,"\\'");
+      return `<div class="admin-row"><span style="flex:1">${u.nome} <span class="chip">${u.role}</span></span>
+        <div class="toggle-group">
+          <button class="${on?'':'on'}" onclick="admSetSuperv('${n}',false)">Não recebe</button>
+          <button class="${on?'on':''}" onclick="admSetSuperv('${n}',true)">Recebe</button>
+        </div></div>`;
+    }).join(''):'<p class="muted">Nenhum usuário cadastrado.</p>';
+  }
   const tv=$('admTambemVende');
   if(tv){
     const gest=usuarios().filter(u=>u.role!=='vendedor'&&u.ativo!==false)
