@@ -196,7 +196,7 @@ a{color:var(--blue)}
         <select id="lancVendSel"></select>
       </div>
       <label>Data</label>
-      <input type="date" id="fData">
+      <input type="date" id="fData" onchange="atualizarModeloDoc()">
       <div id="formVenda">
         <label>Nº do pedido <span class="muted" id="fPedidoAviso">(opcional)</span></label>
         <input type="text" id="fPedido" placeholder="Ex.: 12345" inputmode="numeric">
@@ -219,16 +219,39 @@ a{color:var(--blue)}
           <button data-d="perda" onclick="setDocStatus('perda')">🚫 Sem documentação</button>
         </div>
         <div id="docFeita">
-          <div class="row">
-            <div><label>Valor (R$)</label><input type="number" id="fDocValor" step="0.01" inputmode="decimal"></div>
-            <div><label>Desconto (R$)</label><input type="number" id="fDocDesc" step="0.01" inputmode="decimal" value="0"></div>
+          <div id="docAntigo">
+            <div class="row">
+              <div><label>Valor (R$)</label><input type="number" id="fDocValor" step="0.01" inputmode="decimal"></div>
+              <div><label>Desconto (R$)</label><input type="number" id="fDocDesc" step="0.01" inputmode="decimal" value="0"></div>
+            </div>
+            <label>Tabela</label>
+            <select id="fDocTabela"></select>
           </div>
-          <label>Tabela</label>
-          <select id="fDocTabela"></select>
+          <div id="docNovo" class="hidden">
+            <div class="row">
+              <div><label>Valor de Tabela — R3 (R$)</label>
+                <input type="number" id="fDocTabelaValor" step="0.01" inputmode="decimal" oninput="calcDoc()"></div>
+              <div><label>Valor de Custo (calculado)</label>
+                <input type="number" id="fDocCusto" readonly tabindex="-1" style="background:#eef1f4"></div>
+            </div>
+            <div class="row">
+              <div><label>Valor Negociado (R$)</label>
+                <input type="number" id="fDocNegociado" step="0.01" inputmode="decimal" oninput="calcDoc()"></div>
+              <div><label>Valor de Desconto (calculado)</label>
+                <input type="number" id="fDocDescCalc" readonly tabindex="-1" style="background:#eef1f4"></div>
+            </div>
+            <p class="muted" id="docResumo"></p>
+          </div>
         </div>
         <div id="docPerda" class="doc-perda hidden">
           <label style="color:#c0392b">💬 Motivo da perda da documentação (obrigatório)</label>
           <textarea id="fDocMotivo" rows="2" placeholder="Ex.: cliente fez no despachante próprio, preço..."></textarea>
+          <div id="docPerdaNovo" class="hidden">
+            <label>Documento será feito em que cidade</label>
+            <input type="text" id="fDocCidade" placeholder="Nome da cidade">
+            <label>Quem autorizou / acompanhou</label>
+            <select id="fDocAutoriza"></select>
+          </div>
         </div>
       </div>
       <div id="formAcess" class="hidden">
@@ -406,6 +429,30 @@ function cfg(){ return CACHE.config?CACHE.config.data:null; }
 function usuarios(){ return CACHE.usuarios?CACHE.usuarios.data:[]; }
 /* gestores (supervisor/admin) marcados para também vender */
 function tambemVendem(){ return (cfg()&&cfg().tambemVendem)||[]; }
+/* ============ DOCUMENTAÇÃO DETALHADA (modelo novo) ============
+   Vale a partir do mês configurado; meses anteriores continuam no modelo antigo. */
+function docCustoDesc(){ const c=cfg()||{}; return c.docCustoDesc!==undefined?Number(c.docCustoDesc):300; }
+function docNovoDesde(){ return (cfg()&&cfg().docNovoDesde)||'2026-10'; }
+function docModeloNovo(mes){ const d=docNovoDesde(); return !d || String(mes||mesAtual)>=d; }
+function docAutorizadores(){ return (cfg()&&cfg().docAutorizadores)||['ANDRÉ','PATRÍCIA','MATHEUS']; }
+function docDetalhado(d){ return !!(d && d.status==='feita' && d.valorTabela!==undefined); }
+function cent(v){ return Math.round((Number(v)||0)*100)/100; }
+function docCusto(d){ return cent((Number(d&&d.valorTabela)||0)-docCustoDesc()); }
+function docDescontoDe(d){ return cent((Number(d&&d.valorTabela)||0)-(Number(d&&d.valorNegociado)||0)); }
+function docResultado(d){ return cent((Number(d&&d.valorNegociado)||0)-docCusto(d)); }
+/* 'RP' quando negociado abaixo do custo; senão 0..3 arredondando a faixa para baixo */
+function docNivel(d){
+  const r=docResultado(d);
+  if(r<0) return 'RP';
+  const passo=(docCustoDesc()/3)||1;
+  return Math.max(0,Math.min(3,Math.floor(r/passo)));
+}
+function docFaixa(d){ const n=docNivel(d); return n==='RP'?'RP':('R'+n); }
+function tabelaDoNivel(n){
+  const ts=(cfg()&&cfg().docTabelas)||[];
+  const alvo=ts.find(t=>String(t.nome).indexOf(String(n))>=0);
+  return alvo?alvo.id:(ts[n]?ts[n].id:(ts[0]?ts[0].id:''));
+}
 /* ============ COMISSIONAMENTO DE SUPERVISÃO ============
    Fator aplicado sobre o valor total das motos vendidas pela loja no mês,
    excluindo as Vendas Internas. Não substitui nem altera nenhum outro cálculo. */
@@ -994,7 +1041,9 @@ function biLancs(mes,status){
 }
 function biStats(ls){
   const s={qtMotos:0,valorMotos:0,qtDocs:0,docsPerdidas:0,valorDoc:0,valorAcess:0,qtSN:0,
-           valorFin:0,juros:0,premioAPagar:0,premioPago:0,porCC:{},porModelo:{},porPag:{},porBanco:{},porTabela:{},
+           valorFin:0,juros:0,premioAPagar:0,premioPago:0,
+           docDet:0,docValorNeg:0,docDescTotal:0,docResultado:0,docFaixas:{},
+           porCC:{},porModelo:{},porPag:{},porBanco:{},porTabela:{},
            perdidas:[],seminovos:[],premios:[],porVend:{}};
   const acu=(o,k,q,v)=>{ const x=o[k]||(o[k]={q:0,v:0}); x.q+=q; x.v+=v; };
   ls.forEach(l=>{
@@ -1013,6 +1062,14 @@ function biStats(ls){
       if(d.status==='feita'){ s.qtDocs++; pv.qtDocs++;
         const liq=(d.valor||0)-(d.desconto||0); s.valorDoc+=liq;
         acu(s.porTabela,nomeTabela(d.tabelaId),1,liq);
+        if(docDetalhado(d)){
+          s.docDet++;
+          s.docValorNeg+=Number(d.valorNegociado)||0;
+          s.docDescTotal+=(d.valorDesconto!==undefined?Number(d.valorDesconto):docDescontoDe(d));
+          const rr=(d.resultado!==undefined?Number(d.resultado):docResultado(d));
+          s.docResultado+=rr;
+          acu(s.docFaixas,(d.faixa||docFaixa(d)),1,rr);
+        }
       }else if(d.status==='perda'){ s.docsPerdidas++; pv.perdidas++; s.perdidas.push(l); }
     }else if(l.tipo==='acessorio'){ s.valorAcess+=l.valor||0; pv.valorAcess+=l.valor||0; }
     else if(l.tipo==='premio'){ if(premioPago(l)) s.premioPago+=l.valor||0; else s.premioAPagar+=l.valor||0; s.premios.push(l); }
@@ -1116,10 +1173,38 @@ function renderBI(){
     tb.map(([k,r])=>[k,r.q,biPct(r.q,s.qtDocs),fmt(r.v)]),
     ['TOTAL',s.qtDocs,'100%',fmt(s.valorDoc)]);
 
+  if(s.docDet||s.docsPerdidas){
+    const ordem=['R3','R2','R1','R0','RP'];
+    const linhasFx=ordem.filter(k=>s.docFaixas[k]).map(k=>[
+      k+(k==='RP'?' — prejuízo':''), s.docFaixas[k].q,
+      biPct(s.docFaixas[k].q,s.docDet), fmt(s.docFaixas[k].v)]);
+    html+=`<div class="card">
+      <h2>📄 Documentação — resultado</h2>
+      <p class="muted">Valor de Custo = Valor de Tabela − ${fmt(docCustoDesc())}. Resultado gerado = Valor Negociado − Valor de Custo.</p>
+      <div class="bigkpi">
+        <div class="k"><div class="v">${s.qtDocs}</div><div class="l">Documentos vendidos</div></div>
+        <div class="k"><div class="v">${s.docsPerdidas}</div><div class="l">Documentos perdidos</div></div>
+        <div class="k"><div class="v">${fmt(s.docValorNeg)}</div><div class="l">Valor total vendido</div></div>
+      </div>
+      <div class="bigkpi">
+        <div class="k"><div class="v">${fmt(s.docDescTotal)}</div><div class="l">Valor total de desconto</div></div>
+        <div class="k"><div class="v">${fmt(s.docResultado)}</div><div class="l">Resultado gerado</div></div>
+        <div class="k"><div class="v">${s.qtDocs?Math.round(s.qtDocs/(s.qtDocs+s.docsPerdidas)*100)+'%':'—'}</div><div class="l">Aproveitamento</div></div>
+      </div>
+      ${s.docDet<s.qtDocs?`<p class="muted">⚠️ ${s.qtDocs-s.docDet} documento(s) deste mês são anteriores ao detalhamento e entram só na contagem.</p>`:''}
+      ${linhasFx.length?`<div class="scroll-x"><table>
+        <tr><th>Faixa</th><th>Qtd</th><th>% dos detalhados</th><th>Resultado</th></tr>
+        ${linhasFx.map(l=>`<tr>${l.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}
+        <tr><td><b>TOTAL</b></td><td><b>${s.docDet}</b></td><td><b>100%</b></td><td><b>${fmt(s.docResultado)}</b></td></tr>
+      </table></div>`:''}
+    </div>`;
+  }
+
   if(s.perdidas.length)
-    html+=biTabela('🚫 Documentações perdidas ('+s.perdidas.length+')',['Data','Vendedor','Cliente','Moto','Motivo'],
+    html+=biTabela('🚫 Documentações perdidas ('+s.perdidas.length+')',['Data','Vendedor','Cliente','Moto','Motivo','Cidade','Autorizou'],
       s.perdidas.sort((a,b)=>a.data.localeCompare(b.data)).map(l=>
-        [l.data.split('-').reverse().join('/'),l.vendedor,l.cliente||'—',l.moto||'—',(l.doc&&l.doc.motivo)||'—']));
+        [l.data.split('-').reverse().join('/'),l.vendedor,l.cliente||'—',l.moto||'—',
+         (l.doc&&l.doc.motivo)||'—',(l.doc&&l.doc.cidade)||'—',(l.doc&&l.doc.autorizadoPor)||'—']));
 
   if(s.seminovos.length)
     html+=biTabela('♻️ Motos seminovas de entrada ('+s.seminovos.length+')',['Data','Vendedor','Moto captada'],
@@ -1240,11 +1325,42 @@ function setPremioPago(p){
   premioPagoSel=p;
   document.querySelectorAll('#premioPago button').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
 }
+function calcDoc(){
+  const t=num('fDocTabelaValor'), n=num('fDocNegociado');
+  const d={status:'feita', valorTabela:t, valorNegociado:n};
+  const custo=t?docCusto(d):0;
+  const ec=$('fDocCusto'); if(ec) ec.value = t? custo.toFixed(2) : '';
+  const ed=$('fDocDescCalc'); if(ed) ed.value = t? docDescontoDe(d).toFixed(2) : '';
+  const inf=$('docResumo');
+  if(inf){
+    if(!t){ inf.innerHTML=''; return; }
+    const niv=docNivel(d), fx=docFaixa(d), res=docResultado(d);
+    const premio=valorDoc(tabelaDoNivel(niv==='RP'?0:niv));
+    inf.innerHTML = `Resultado gerado: <b>${fmt(res)}</b> · faixa <b>${fx}</b>`
+      + (fx==='RP' ? ' <span class="chip red">prejuízo — negociado abaixo do custo</span>' : '')
+      + ` · Prêmio Documentação <b>${fmt(premio)}</b>`;
+  }
+}
+function atualizarModeloDoc(){
+  const dt=($('fData')&&$('fData').value)||'';
+  const novo=docModeloNovo(dt?dt.slice(0,7):mesAtual);
+  const a=$('docAntigo'), b=$('docNovo'), pn=$('docPerdaNovo');
+  if(a) a.classList.toggle('hidden',novo);
+  if(b) b.classList.toggle('hidden',!novo);
+  if(pn) pn.classList.toggle('hidden',!novo);
+  const sel=$('fDocAutoriza');
+  if(sel && !sel.options.length){
+    sel.innerHTML='<option value="">Selecione...</option>'
+      +docAutorizadores().map(n=>`<option>${n}</option>`).join('');
+  }
+  calcDoc();
+}
 function setDocStatus(d){
   docStatusSel=d;
   document.querySelectorAll('#docStatus button').forEach(b=>b.classList.toggle('on',b.dataset.d===d));
   $('docFeita').classList.toggle('hidden',d!=='feita');
   $('docPerda').classList.toggle('hidden',d!=='perda');
+  atualizarModeloDoc();
 }
 function addPagamento(){ pagamentos.push({tipo:'À Vista',banco:'',retorno:'R0',valor:0,juros:0}); renderPagamentos(); }
 function jurosLanc(l){ return (l.pagamentos||[]).reduce((s,p)=>s+(p.tipo==='Cartão'?(p.juros||0):0),0); }
@@ -1315,12 +1431,36 @@ function salvarLancamento(){
     l.cliente=cli; l.pedido=$('fPedido').value.trim(); l.moto=$('fMoto').value; l.valorMoto=vm;
     l.pagamentos=JSON.parse(JSON.stringify(pagamentos));
     l.valorAcess=num('fAcessVenda');
+    const docNovo=docModeloNovo(data.slice(0,7));
     if(docStatusSel==='feita'){
-      l.doc={status:'feita', valor:num('fDocValor'), desconto:num('fDocDesc'), tabelaId:$('fDocTabela').value};
+      if(docNovo){
+        const vt=num('fDocTabelaValor'), vn=num('fDocNegociado');
+        if(vt<=0) return toast('Informe o valor de tabela da documentação', true);
+        if(vn<=0) return toast('Informe o valor negociado da documentação', true);
+        const dd={status:'feita', valorTabela:vt, valorNegociado:vn};
+        dd.valorCusto=docCusto(dd);
+        dd.valorDesconto=docDescontoDe(dd);
+        dd.resultado=docResultado(dd);
+        const niv=docNivel(dd);
+        dd.faixa=niv==='RP'?'RP':('R'+niv);
+        dd.tabelaId=tabelaDoNivel(niv==='RP'?0:niv);
+        /* espelho dos campos antigos: todo o cálculo já existente continua idêntico */
+        dd.valor=vt; dd.desconto=dd.valorDesconto;
+        l.doc=dd;
+      }else{
+        l.doc={status:'feita', valor:num('fDocValor'), desconto:num('fDocDesc'), tabelaId:$('fDocTabela').value};
+      }
     }else{
       const motivo=$('fDocMotivo').value.trim();
       if(!motivo) return toast('Informe o motivo da perda da documentação', true);
       l.doc={status:'perda', motivo};
+      if(docNovo){
+        const cid=$('fDocCidade').value.trim();
+        const aut=$('fDocAutoriza').value;
+        if(!cid) return toast('Informe em que cidade o documento será feito', true);
+        if(!aut) return toast('Informe quem autorizou / acompanhou', true);
+        l.doc.cidade=cid; l.doc.autorizadoPor=aut;
+      }
     }
   }else if(tipoLanc==='acessorio'){
     const cliA=$('fClienteAcess').value.trim();
@@ -1353,8 +1493,10 @@ function limparForm(){
   editId=null;
   $('btnCancelEdit').classList.add('hidden');
   $('btnSalvar').textContent='💾 Salvar Lançamento';
-  ['fValorMoto','fAcessVenda','fDocValor','fDocMotivo','fAcessDesc','fAcessValor','fSnMoto','fCliente','fClienteAcess','fPedido','fPremioDesc','fPremioValor']
+  ['fValorMoto','fAcessVenda','fDocValor','fDocMotivo','fAcessDesc','fAcessValor','fSnMoto','fCliente','fClienteAcess','fPedido','fPremioDesc','fPremioValor','fDocTabelaValor','fDocNegociado','fDocCusto','fDocDescCalc','fDocCidade']
     .forEach(id=>{ const el=$(id); if(el) el.value=''; });
+  if($('fDocAutoriza')) $('fDocAutoriza').value='';
+  if($('docResumo')) $('docResumo').innerHTML='';
   setPremioPago('apagar');
   $('fDocDesc').value='0';
   $('fData').value=new Date().toISOString().slice(0,10);
@@ -1401,8 +1543,18 @@ function editarLanc(id){
     $('fMoto').value=l.moto;
     $('fValorMoto').value=l.valorMoto; $('fAcessVenda').value=l.valorAcess||'';
     pagamentos=JSON.parse(JSON.stringify(l.pagamentos)); renderPagamentos();
-    if(l.doc.status==='feita'){ setDocStatus('feita'); $('fDocValor').value=l.doc.valor; $('fDocDesc').value=l.doc.desconto; $('fDocTabela').value=l.doc.tabelaId; }
-    else{ setDocStatus('perda'); $('fDocMotivo').value=l.doc.motivo; }
+    if(l.doc.status==='feita'){
+      setDocStatus('feita');
+      $('fDocValor').value=l.doc.valor; $('fDocDesc').value=l.doc.desconto; $('fDocTabela').value=l.doc.tabelaId;
+      $('fDocTabelaValor').value=l.doc.valorTabela!==undefined?l.doc.valorTabela:'';
+      $('fDocNegociado').value=l.doc.valorNegociado!==undefined?l.doc.valorNegociado:'';
+      atualizarModeloDoc();
+    }else{
+      setDocStatus('perda'); $('fDocMotivo').value=l.doc.motivo;
+      atualizarModeloDoc();
+      $('fDocCidade').value=l.doc.cidade||'';
+      if($('fDocAutoriza')) $('fDocAutoriza').value=l.doc.autorizadoPor||'';
+    }
   }else if(l.tipo==='acessorio'){ $('fClienteAcess').value=l.cliente||''; $('fAcessDesc').value=l.descricao||''; $('fAcessValor').value=l.valor; }
   else $('fSnMoto').value=l.descricao;
   $('btnSalvar').textContent='💾 Atualizar Lançamento';
@@ -1539,12 +1691,22 @@ function detalheHtml(l,acoes){
       }
     });
     const doc=l.doc.status==='feita'
-      ? `<tr><td>Documentação</td><td>${nomeTabela(l.doc.tabelaId)}</td></tr>
-         <tr><td class="muted" style="padding-left:18px">Valor cobrado</td><td class="muted">${fmt(l.doc.valor)}</td></tr>
-         <tr><td class="muted" style="padding-left:18px">Desconto</td><td class="muted">${fmt(l.doc.desconto)}</td></tr>
-         <tr><td class="muted" style="padding-left:18px">Líquido ao cliente</td><td class="muted">${fmt((l.doc.valor||0)-(l.doc.desconto||0))}</td></tr>
-         <tr><td><b>Prêmio Documentação</b></td><td><b>${fmt(valorDoc(l.doc.tabelaId))}</b></td></tr>`
-      : `<tr><td colspan="2"><span class="chip red">🚫 Documentação perdida — ${l.doc.motivo}</span></td></tr>`;
+      ? (docDetalhado(l.doc)
+        ? `<tr><td>Documentação</td><td>${nomeTabela(l.doc.tabelaId)} · faixa <b>${l.doc.faixa||docFaixa(l.doc)}</b></td></tr>
+           <tr><td class="muted" style="padding-left:18px">Valor de Tabela (R3)</td><td class="muted">${fmt(l.doc.valorTabela)}</td></tr>
+           <tr><td class="muted" style="padding-left:18px">Valor de Custo</td><td class="muted">${fmt(l.doc.valorCusto!==undefined?l.doc.valorCusto:docCusto(l.doc))}</td></tr>
+           <tr><td class="muted" style="padding-left:18px">Valor Negociado</td><td class="muted">${fmt(l.doc.valorNegociado)}</td></tr>
+           <tr><td class="muted" style="padding-left:18px">Valor de Desconto</td><td class="muted">${fmt(l.doc.valorDesconto!==undefined?l.doc.valorDesconto:docDescontoDe(l.doc))}</td></tr>
+           <tr><td><b>Resultado gerado</b></td><td><b>${fmt(l.doc.resultado!==undefined?l.doc.resultado:docResultado(l.doc))}</b></td></tr>
+           <tr><td><b>Prêmio Documentação</b></td><td><b>${fmt(valorDoc(l.doc.tabelaId))}</b></td></tr>`
+        : `<tr><td>Documentação</td><td>${nomeTabela(l.doc.tabelaId)}</td></tr>
+           <tr><td class="muted" style="padding-left:18px">Valor cobrado</td><td class="muted">${fmt(l.doc.valor)}</td></tr>
+           <tr><td class="muted" style="padding-left:18px">Desconto</td><td class="muted">${fmt(l.doc.desconto)}</td></tr>
+           <tr><td class="muted" style="padding-left:18px">Líquido ao cliente</td><td class="muted">${fmt((l.doc.valor||0)-(l.doc.desconto||0))}</td></tr>
+           <tr><td><b>Prêmio Documentação</b></td><td><b>${fmt(valorDoc(l.doc.tabelaId))}</b></td></tr>`)
+      : `<tr><td colspan="2"><span class="chip red">🚫 Documentação perdida — ${l.doc.motivo}</span></td></tr>`
+        +(l.doc.cidade?`<tr><td class="muted" style="padding-left:18px">Cidade onde será feito</td><td class="muted">${l.doc.cidade}</td></tr>`:'')
+        +(l.doc.autorizadoPor?`<tr><td class="muted" style="padding-left:18px">Autorizou / acompanhou</td><td class="muted">${l.doc.autorizadoPor}</td></tr>`:'');
     const comMoto=l.valorMoto*(c.pctMoto||0)/100;
     const comAcess=(l.valorAcess||0)*(c.pctAcess||0)/100;
     corpo=`<div class="scroll-x"><table>
@@ -2118,10 +2280,37 @@ function exportarExcel(){
   C.push(['TOTAL',st.qtDocs,st.valorDoc]);
   C.push([]);
   C.push(['PERDIDAS ('+st.docsPerdidas+')']);
-  C.push(['Data','Vendedor','Cliente','Moto','Motivo']);
+  C.push(['Data','Vendedor','Cliente','Moto','Motivo','Cidade','Autorizou/Acompanhou']);
   st.perdidas.slice().sort((a,b2)=>a.data.localeCompare(b2.data)).forEach(l=>
-    C.push([dataBR(l.data),l.vendedor,l.cliente||'',l.moto||'',(l.doc&&l.doc.motivo)||'']));
-  XLSX.utils.book_append_sheet(wb,xlsWs(C,{cab:6,moeda:[2],larg:[20,26,32,34,48]}),'Documentação');
+    C.push([dataBR(l.data),l.vendedor,l.cliente||'',l.moto||'',(l.doc&&l.doc.motivo)||'',
+            (l.doc&&l.doc.cidade)||'',(l.doc&&l.doc.autorizadoPor)||'']));
+  if(st.docDet){
+    C.push([]);
+    C.push(['RESULTADO DA DOCUMENTAÇÃO']);
+    C.push(['Indicador','Valor']);
+    C.push(['Documentos vendidos',st.qtDocs]);
+    C.push(['Documentos perdidos',st.docsPerdidas]);
+    C.push(['Valor total vendido',st.docValorNeg]);
+    C.push(['Valor total de desconto',st.docDescTotal]);
+    C.push(['Resultado gerado',st.docResultado]);
+    C.push([]);
+    C.push(['Faixa','Qtd','Resultado']);
+    ['R3','R2','R1','R0','RP'].filter(k=>st.docFaixas[k]).forEach(k=>
+      C.push([k+(k==='RP'?' — prejuízo':''),st.docFaixas[k].q,st.docFaixas[k].v]));
+    C.push([]);
+    C.push(['DETALHE DOS DOCUMENTOS VENDIDOS']);
+    C.push(['Data','Vendedor','Cliente','Valor de Tabela','Valor de Custo','Valor Negociado','Valor de Desconto','Resultado','Faixa','Prêmio Documentação']);
+    val.filter(l=>l.tipo==='venda'&&docDetalhado(l.doc)).sort((a,b2)=>a.data.localeCompare(b2.data)).forEach(l=>{
+      const d=l.doc;
+      C.push([dataBR(l.data),l.vendedor,l.cliente||'',Number(d.valorTabela)||0,
+        d.valorCusto!==undefined?Number(d.valorCusto):docCusto(d),
+        Number(d.valorNegociado)||0,
+        d.valorDesconto!==undefined?Number(d.valorDesconto):docDescontoDe(d),
+        d.resultado!==undefined?Number(d.resultado):docResultado(d),
+        d.faixa||docFaixa(d), valorDoc(d.tabelaId)]);
+    });
+  }
+  XLSX.utils.book_append_sheet(wb,xlsWs(C,{cab:6,moeda:[2],larg:[20,26,32,34,48,26,26,20,22,20]}),'Documentação');
 
   /* ---------- 5b. PRÊMIO CAMPANHA ---------- */
   const pm=premiosDoMes(mes);
@@ -2209,6 +2398,16 @@ function renderAdmin(){
     <div class="admin-row"><input id="fqMin" class="narrow" type="number" placeholder="Qt mín."><input id="fqPremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasQt','fqMin','fqPremio')">＋</button></div>
     <h3>Prêmio Emplacamento</h3><div id="admFaixasEmpl"></div>
     <div class="admin-row"><input id="feMin" class="narrow" type="number" placeholder="Qt mín."><input id="fePremio" type="number" placeholder="Prêmio R$"><button class="btn sm" onclick="admAddFaixa('faixasEmpl','feMin','fePremio')">＋</button></div></div>
+  <div class="card"><h2>📄 Documentação detalhada</h2>
+    <p class="muted">A partir do mês escolhido o lançamento passa a pedir Valor de Tabela, Valor Negociado, cidade e quem autorizou. O Prêmio Documentação passa a ser definido pela faixa do resultado (R3→Tabela 3, R2→Tabela 2, R1→Tabela 1, R0 e RP→Tabela 0). Meses anteriores não mudam.</p>
+    <label>Vale a partir do mês</label>
+    <input type="month" value="${docNovoDesde()}" onchange="admSetDocDesde(this.value)">
+    <label>Desconto do Valor de Custo (R$)</label>
+    <input type="number" step="0.01" value="${docCustoDesc()}" onchange="admSetDocCusto(this.value)">
+    <p class="muted">Faixas: R3 ≥ ${fmt(docCustoDesc())} · R2 ≥ ${fmt(docCustoDesc()/3*2)} · R1 ≥ ${fmt(docCustoDesc()/3)} · R0 ≥ ${fmt(0)} · RP abaixo de zero.</p>
+    <h3>Quem pode autorizar a perda</h3>
+    <div id="admAutoriza"></div>
+    <div class="admin-row"><input id="novoAutoriza" placeholder="Nome"><button class="btn sm" onclick="admAddAutoriza()">＋</button></div></div>
   <div class="card"><h2>👔 Comissionamento de Supervisão</h2>
     <p class="muted">Fator aplicado sobre o <b>valor total das motos vendidas pela loja no mês</b>, descontadas as Vendas Internas. Soma ao comissionamento normal de quem estiver marcado abaixo, sem alterar o cálculo de mais ninguém.</p>
     <label>Fator (ex.: 0,0025 = 0,25%)</label>
@@ -2290,6 +2489,19 @@ function admAddVendDiv(){
   $('novoVendDiv').value='';
   saveConfig(); admRenderListas(); renderFormBasics();
 }
+function admSetDocDesde(v){ const c=cfg(); c.docNovoDesde=v||''; saveConfig(); renderAdmin(); renderFormBasics(); }
+function admSetDocCusto(v){ const c=cfg(); c.docCustoDesc=parseFloat(String(v).replace(',','.'))||0; saveConfig(); renderAdmin(); }
+function admAddAutoriza(){
+  const v=$('novoAutoriza').value.trim(); if(!v) return;
+  const c=cfg(); c.docAutorizadores=(c.docAutorizadores||docAutorizadores()).slice();
+  if(c.docAutorizadores.indexOf(v)>=0) return toast('Já cadastrado', true);
+  c.docAutorizadores.push(v); $('novoAutoriza').value='';
+  saveConfig(); admRenderListas();
+}
+function admRmAutoriza(i){
+  const c=cfg(); c.docAutorizadores=(c.docAutorizadores||docAutorizadores()).slice();
+  c.docAutorizadores.splice(i,1); saveConfig(); admRenderListas();
+}
 function admSetFatorSuperv(v){
   const c=cfg(); c.fatorSupervisao=parseFloat(String(v).replace(',','.'))||0;
   saveConfig(); renderAdmin();
@@ -2347,6 +2559,8 @@ function admRenderListas(){
   $('admFaixasQt').innerHTML=(c.faixasQt||[]).map((f,i)=>`<div class="admin-row"><span class="muted">≥</span><input class="narrow" type="number" value="${f.min}" onchange="admEditFaixa('faixasQt',${i},'min',this.value)"><span class="muted">vendas →</span><input type="number" value="${f.premio}" onchange="admEditFaixa('faixasQt',${i},'premio',this.value)"><button class="mini" onclick="admRmStr('faixasQt',${i})">🗑️</button></div>`).join('');
   const dv=$('admVendDiv');
   if(dv) dv.innerHTML=(c.vendedoresDiversos||[]).map((v,i)=>`<div class="admin-row"><input value="${v}" onchange="admEditStr('vendedoresDiversos',${i},this.value)"><button class="mini" onclick="admRmStr('vendedoresDiversos',${i})">🗑️</button></div>`).join('')||'<p class="muted">Nenhum vendedor diverso cadastrado.</p>';
+  const aa=$('admAutoriza');
+  if(aa) aa.innerHTML=docAutorizadores().map((n,i)=>`<div class="admin-row"><span style="flex:1">${n}</span><button class="mini" onclick="admRmAutoriza(${i})">🗑️</button></div>`).join('')||'<p class="muted">Nenhum nome cadastrado.</p>';
   const si=$('admSupervInfo');
   if(si){
     const vale=supervValeNoMes(mesAtual);
