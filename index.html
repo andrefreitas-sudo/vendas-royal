@@ -1409,7 +1409,25 @@ function pagStatus(){
     : `<p class="warn">⚠️ Pagamentos somam ${fmt(tot)} — ${dif>0?'faltam':'excedem'} ${fmt(Math.abs(dif))}.</p>`)
     + (juros>0?`<p class="muted">💳 Juros de cartão: ${fmt(juros)} — lançado como excedente, fora do valor da moto.</p>`:'');
 }
-function salvarLancamento(){
+/* Procura outro lançamento de venda com o mesmo nº de pedido.
+   Devolve o lançamento encontrado, null se o número está livre,
+   ou undefined quando não foi possível conferir no servidor. */
+async function pedidoDuplicado(pedido, idAtual){
+  const p=String(pedido||'').trim();
+  if(!p) return null;
+  const local=lancAll().find(l=>l.tipo==='venda' && l.status!=='rejeitado'
+    && l.id!==idAtual && String(l.pedido||'').trim()===p);
+  if(local) return {vendedor:local.vendedor, cliente:local.cliente, mes:local.mes, status:local.status};
+  if(!navigator.onLine) return undefined;
+  try{
+    const r=await sb.from('lancamentos').select('id,vendedor,cliente,mes,status')
+      .eq('tipo','venda').neq('status','rejeitado').eq('dados->>pedido',p).limit(5);
+    if(r.error) return undefined;
+    const achou=(r.data||[]).find(x=>x.id!==idAtual);
+    return achou?{vendedor:achou.vendedor, cliente:achou.cliente, mes:achou.mes, status:achou.status}:null;
+  }catch(e){ return undefined; }
+}
+async function salvarLancamento(){
   const data=$('fData').value||new Date().toISOString().slice(0,10);
   const vend=isSup()?$('lancVendSel').value:SESSION.nome;
   if(!vend) return toast('Sem vendedor', true);
@@ -1428,7 +1446,16 @@ function salvarLancamento(){
     const tot=pagamentos.reduce((s,p)=>s+p.valor,0);
     if(Math.abs(tot-vm)>=0.01) return toast('Pagamentos não conferem com o valor da moto', true);
     if(pagamentos.some(p=>p.tipo==='Financiamento'&&!p.banco)) return toast('Selecione o banco do financiamento', true);
-    l.cliente=cli; l.pedido=$('fPedido').value.trim(); l.moto=$('fMoto').value; l.valorMoto=vm;
+    const ped=$('fPedido').value.trim();
+    if(ped){
+      const dup=await pedidoDuplicado(ped, editId);
+      if(dup===undefined){
+        if(!confirm('Sem conexão para conferir se o pedido '+ped+' já existe.\n\nSalvar mesmo assim? Se for repetido, o supervisor será avisado na validação.')) return;
+      }else if(dup){
+        return toast('Pedido '+ped+' já lançado — '+(dup.vendedor||'')+' · '+(dup.cliente||'').slice(0,24)+' ('+nomeMes(dup.mes)+'). Procure por ele em Lançamentos.', true);
+      }
+    }
+    l.cliente=cli; l.pedido=ped; l.moto=$('fMoto').value; l.valorMoto=vm;
     l.pagamentos=JSON.parse(JSON.stringify(pagamentos));
     l.valorAcess=num('fAcessVenda');
     const docNovo=docModeloNovo(data.slice(0,7));
